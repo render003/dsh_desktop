@@ -2644,6 +2644,67 @@ function transformSidebarFooterLayout(src, file) {
   return { status: 'changed', src: src.replace(SIDEBAR_FOOTER_LAYOUT_FROM, SIDEBAR_FOOTER_LAYOUT_TO) };
 }
 
+// ---------------------------------------------------------------------------
+// 左侧栏底部直接放置「设置」入口（sidebar-direct-settings）：
+// 移除 AccountMenu 里的「更多」弹出菜单以及其中的「意见反馈」「登录/退出」项，
+// 直接在侧栏底部渲染一个「⚙ 设置」按钮，点击立即打开设置面板；展开态与折叠窄轨态
+// 均沿用原生 `.yHnPSG_trigger` 样式与 `aria-label` / `title` 提示。
+// 注意：靶文件是单行压缩产物，注入体禁用 `//` 行注释，只用 `/* ... */`。
+// ---------------------------------------------------------------------------
+const SIDEBAR_DIRECT_SETTINGS_MARKER = 'dsh-desktop fix: sidebar direct settings button';
+const SIDEBAR_DIRECT_SETTINGS_FROM = '(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu,{open,side:`top`,portal:true,autoFocus:true,className:AccountMenu_module_css_default.anchor,listClassName:signedIn?void 0:AccountMenu_module_css_default.signedOutMenu,anchor:(0,react_jsx_runtime.jsxs)(`button`,{ref:trigger,type:`button`,className:AccountMenu_module_css_default.trigger,"data-collapsed":!wide,"data-signed-out":!signedIn,"aria-label":t(`menu`),"aria-haspopup":`menu`,"aria-expanded":open,onClick:()=>{setOpen(value=>!value)},children:[signedIn?(0,react_jsx_runtime.jsx)(`span`,{className:AccountMenu_module_css_default.avatar,"data-avatar-status":account.avatar?.status,children:(0,react_jsx_runtime.jsx)(AccountAvatar,{avatar:account.avatar,avatarFailed})}):(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineMedium,{size:14}),wide&&(0,react_jsx_runtime.jsx)(`span`,{className:AccountMenu_module_css_default.label,children:signedIn?label:t(`more`)})]}),items:[{id:`settings`,label:t(`settings`),icon:(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineMedium,{size:16}),...settingsShortcut===void 0?{}:{shortcut:settingsShortcut}},{id:`contact`,label:t(`contactUs`),icon:(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPaperPlaneOutlineMedium,{size:16})},...signedIn?[{id:`signout`,label:t(`signOut`),icon:(0,react_jsx_runtime.jsx)(LogoutIcon,{}),disabled:busy}]:[{id:`signin`,label:t(`signIn`),icon:(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconUserOutlineMedium,{size:16})}]],onClose:()=>{setOpen(false)},onSelect:id=>{if(id===`settings`){setOpen(false);trigger.current?.focus();openSettings()}else if(id===`contact`){setOpen(false);contactUs()}else if(id===`signin`)beginSignIn();else requestSignOut()}})';
+const SIDEBAR_DIRECT_SETTINGS_TO = '/* dsh-desktop fix: sidebar direct settings button */(0,react_jsx_runtime.jsxs)(`button`,{ref:trigger,type:`button`,className:AccountMenu_module_css_default.trigger,"data-collapsed":!wide,"data-signed-out":true,"aria-label":t(`settings`),title:settingsShortcut===void 0?t(`settings`):`${t(`settings`)} (${settingsShortcut})`,onClick:()=>{openSettings()},children:[(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineMedium,{size:16,"aria-hidden":true}),wide&&(0,react_jsx_runtime.jsx)(`span`,{className:AccountMenu_module_css_default.label,children:t(`settings`)})]})';
+
+function transformSidebarDirectSettings(src, file) {
+  if (src.includes(SIDEBAR_DIRECT_SETTINGS_MARKER)) return { status: 'already' };
+  if (!src.includes(SIDEBAR_DIRECT_SETTINGS_FROM)) {
+    return { status: 'anchor-missing', detail: '侧栏直达设置按钮锚点未匹配（dsh 版本可能已变化），跳过 ' + file };
+  }
+  return { status: 'changed', src: src.replace(SIDEBAR_DIRECT_SETTINGS_FROM, SIDEBAR_DIRECT_SETTINGS_TO) };
+}
+
+// ---------------------------------------------------------------------------
+// 移除反馈功能（remove-feedback-ui）：
+// 让 @deepseek-ai/dsh-client-ui-message-feedback 的 apply(ctx) 直接返回，不再提供
+// feedbackUi 服务（会话顶栏「···」菜单里的「反馈」项与分隔线随之自动消失），同时
+// 移除消息赞/踩反馈按钮、反馈弹窗与 /feedback 装饰。无其他服务强依赖 feedbackUi。
+// ---------------------------------------------------------------------------
+const REMOVE_FEEDBACK_UI_MARKER = 'dsh-desktop fix: remove feedback UI';
+const REMOVE_FEEDBACK_UI_FROM = 'function apply(ctx){ctx.effect(()=>ctx.locale.register(NS,{zh,en,ja,es,fr,de,ru,pt}),`ui-message-feedback: dictionaries`);';
+const REMOVE_FEEDBACK_UI_TO = 'function apply(ctx){/* dsh-desktop fix: remove feedback UI */return;ctx.effect(()=>ctx.locale.register(NS,{zh,en,ja,es,fr,de,ru,pt}),`ui-message-feedback: dictionaries`);';
+
+function transformRemoveFeedbackUi(src, file) {
+  if (src.includes(REMOVE_FEEDBACK_UI_MARKER)) return { status: 'already' };
+  if (!src.includes(REMOVE_FEEDBACK_UI_FROM)) {
+    return { status: 'anchor-missing', detail: '移除反馈功能锚点未匹配（dsh 版本可能已变化），跳过 ' + file };
+  }
+  return { status: 'changed', src: src.replace(REMOVE_FEEDBACK_UI_FROM, REMOVE_FEEDBACK_UI_TO) };
+}
+
+// ---------------------------------------------------------------------------
+// 底部面板增加「终端」功能（sidebar-bottom-terminal）：
+// 复用内核自带的 @deepseek-ai/dsh-client-ui-sidebar-terminal（LazyTerminalBody +
+// ctx.webTerminals + ctx.theme + i18n），当 dsh-better-sidebar 就绪时向底部工作台
+// 注册一个 bottomOnly 的 `terminal` tab（卡片、+ 菜单与多标签页支持），并把底部终端
+// 纳入 webTerminals.retainTabs 窗口 hold 同步，防止切换右侧栏时释放底部终端 hold。
+// ---------------------------------------------------------------------------
+const SIDEBAR_BOTTOM_TERMINAL_MARKER = 'dsh-desktop fix: bottom workbench terminal tab';
+const SIDEBAR_BOTTOM_TERMINAL_HOLD_FROM = 'function apply(ctx){ctx.effect(()=>{const sync=()=>{ctx.webTerminals.retainTabs(ctx.sidebarRight.openTabs.getSnapshot().filter(tab=>tab.kind===`terminal`))};const unsubscribe=ctx.sidebarRight.openTabs.subscribe(sync);sync();return()=>{unsubscribe();ctx.webTerminals.retainTabs([])}},`ui-sidebar-terminal.window-holds`);';
+const SIDEBAR_BOTTOM_TERMINAL_HOLD_TO = 'function apply(ctx){/* dsh-desktop fix: bottom workbench terminal tab */const bottomTabs=new Map;const sync=()=>{ctx.webTerminals.retainTabs([...ctx.sidebarRight.openTabs.getSnapshot().filter(tab=>tab.kind===`terminal`),...bottomTabs.values()])};ctx.effect(()=>{const unsubscribe=ctx.sidebarRight.openTabs.subscribe(sync);sync();return()=>{bottomTabs.clear();unsubscribe();ctx.webTerminals.retainTabs([])}},`ui-sidebar-terminal.window-holds`);';
+const SIDEBAR_BOTTOM_TERMINAL_REG_FROM = 'AgentTerminalOpener)),`ui-sidebar-terminal.agent-terminals`)}';
+const SIDEBAR_BOTTOM_TERMINAL_REG_TO = 'AgentTerminalOpener)),`ui-sidebar-terminal.agent-terminals`);ctx.inject([`betterSidebar`],scope=>{const bs=scope.get(`betterSidebar`);if(!bs||typeof bs.registerTab!==`function`)return;const BottomTerminalBody=({scope:tabScope,tab,visible})=>{const sid=tabScope?.sessionId;const model=(0,react.useMemo)(()=>{if(!sid)return;if(!bottomTabs.has(tab.id)){bottomTabs.set(tab.id,{sessionId:sid,tabId:tab.id,contentId:tab.id,kind:`terminal`});sync()}return ctx.webTerminals.view(sid,tab.id,tab.id)},[sid,tab.id]);(0,react.useEffect)(()=>{if(!sid)return;bottomTabs.set(tab.id,{sessionId:sid,tabId:tab.id,contentId:tab.id,kind:`terminal`});sync()},[sid,tab.id]);const useTabInfo=(0,react.useCallback)(()=>({tab:{id:tab.id,contentId:tab.id,title:tab.title,visible,actions:{openTab:(_kind,opts)=>{if(opts&&opts.replaceTab&&sid){bottomTabs.delete(tab.id);ctx.webTerminals.close(sid,tab.id,tab.id);sync();if(typeof bs.closeTab===`function`)bs.closeTab(tab.id,tabScope)}bs.openTab({type:`terminal`,title:t(`title`),target:`bottom`},tabScope)}}}}),[tab.id,tab.title,visible,sid,tabScope]);const useTerminal=(_key,sel)=>{const snap=(0,react.useSyncExternalStore)(model?model.state.subscribe:()=>()=>{},()=>model?model.state.getSnapshot():void 0,()=>model?model.state.getSnapshot():void 0);return sel?sel(snap):snap};const useTheme=sel=>(0,react.useSyncExternalStore)(theme.subscribe,()=>sel(theme.getSnapshot()),()=>sel(theme.getSnapshot()));const viewFn=(0,react.useCallback)(()=>model,[model]);if(!model)return null;return(0,react_jsx_runtime.jsx)(`div`,{style:{width:`100%`,height:`100%`,minHeight:0,display:`flex`,flexDirection:`column`,overflow:`hidden`},children:(0,react_jsx_runtime.jsx)(LazyTerminalBody,{useTabInfo,useTerminal,useTheme,view:viewFn,t})})};scope.effect(()=>bs.registerTab({id:`terminal`,title:()=>t(`title`),description:()=>t(`description`),icon:()=>(0,react_jsx_runtime.jsx)(TerminalIcon,{}),order:40,bottomOnly:true,createTab:()=>({tab:{id:`terminal:${crypto.randomUUID()}`,type:`terminal`,title:t(`title`)}}),dedupeKey:tab=>tab.id,onOpen:(tab,tabScope)=>{if(!tabScope?.sessionId)return;bottomTabs.set(tab.id,{sessionId:tabScope.sessionId,tabId:tab.id,contentId:tab.id,kind:`terminal`});sync()},onClose:(tab,tabScope)=>{bottomTabs.delete(tab.id);if(tabScope?.sessionId)ctx.webTerminals.close(tabScope.sessionId,tab.id,tab.id);sync()},component:BottomTerminalBody}),`ui-sidebar-terminal: bottom workbench tab`)})}';
+
+function transformSidebarBottomTerminal(src, file) {
+  if (src.includes(SIDEBAR_BOTTOM_TERMINAL_MARKER)) return { status: 'already' };
+  if (!src.includes(SIDEBAR_BOTTOM_TERMINAL_HOLD_FROM) || !src.includes(SIDEBAR_BOTTOM_TERMINAL_REG_FROM)) {
+    return { status: 'anchor-missing', detail: '底部面板终端补丁锚点未匹配（dsh 版本可能已变化），跳过 ' + file };
+  }
+  const out = src
+    .replace(SIDEBAR_BOTTOM_TERMINAL_HOLD_FROM, SIDEBAR_BOTTOM_TERMINAL_HOLD_TO)
+    .replace(SIDEBAR_BOTTOM_TERMINAL_REG_FROM, SIDEBAR_BOTTOM_TERMINAL_REG_TO);
+  return { status: 'changed', src: out };
+}
+
 module.exports = {
   // runtime-patches 的 transform（re-export）。其中 transformPersistenceAll 不被
   // registry 直接引用，其消费方是 rootAppliers.patchSessionPersistence
@@ -2677,6 +2738,9 @@ module.exports = {
   transformConversationAssemblyResilience,
   transformReasoningRowCollapseWidth,
   transformSidebarFooterLayout,
+  transformSidebarDirectSettings,
+  transformRemoveFeedbackUi,
+  transformSidebarBottomTerminal,
   transformSessionUnknownEventTolerance,
   transformProfilePatchGuard,
   transformProfileBundleAppBoot,
@@ -2795,6 +2859,9 @@ module.exports = {
     ASSEMBLY_RESILIENCE_MARKER,
     REASONING_ROW_COLLAPSE_MARKER,
     SIDEBAR_FOOTER_LAYOUT_MARKER,
+    SIDEBAR_DIRECT_SETTINGS_MARKER,
+    REMOVE_FEEDBACK_UI_MARKER,
+    SIDEBAR_BOTTOM_TERMINAL_MARKER,
     SESSION_UNKNOWN_EVENT_TOLERANCE_MARKER,
     ...require('./loader-isolation').markers,
     ...require('./onboarding-resilience').markers,

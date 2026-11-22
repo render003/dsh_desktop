@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-22T08:48:43.324Z",
+  "generatedAt": "2026-11-22T10:41:46.115Z",
   "kernelRoot": "@deepseek-ai",
-  "markerCount": 89,
+  "markerCount": 92,
   "surface": [
     {
       "file": "cordis-plugin-loader/lib/index.js",
@@ -93,7 +93,7 @@
     },
     {
       "file": "dsh-api-workspace-controller/lib/index.js",
-      "sha256": "774981592caf257b",
+      "sha256": "ee018fcf93d8d113",
       "markers": [
         "session manage",
         "session orphans"
@@ -164,6 +164,13 @@
       ]
     },
     {
+      "file": "dsh-client-ui-message-feedback/lib/client.js",
+      "sha256": "4dd2f11555b0273a",
+      "markers": [
+        "remove feedback UI"
+      ]
+    },
+    {
       "file": "dsh-client-ui-plugin-manager/lib/client.js",
       "sha256": "ec1e18683032730b",
       "markers": [
@@ -172,10 +179,11 @@
     },
     {
       "file": "dsh-client-ui-settings-account/lib/client.js",
-      "sha256": "fc565819bd382211",
+      "sha256": "e9e692f2659fb7d8",
       "markers": [
         "onboarding silent update/complete guards report which guard fired",
-        "onboarding step advance must not depend on a rendering frame"
+        "onboarding step advance must not depend on a rendering frame",
+        "sidebar direct settings button"
       ]
     },
     {
@@ -198,6 +206,13 @@
       "sha256": "155197a3dd5b93ed",
       "markers": [
         "issue #20"
+      ]
+    },
+    {
+      "file": "dsh-client-ui-sidebar-terminal/lib/client.js",
+      "sha256": "6cccca21b5eec83b",
+      "markers": [
+        "bottom workbench terminal tab"
       ]
     },
     {

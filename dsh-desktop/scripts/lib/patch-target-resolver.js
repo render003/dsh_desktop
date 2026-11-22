@@ -151,6 +151,12 @@ const SKILL_FS_PKG_REL = path.join('dsh-skill-filesystem', 'lib', 'index.js');
 // 侧边栏底部插槽布局优化补丁目标（dsh-client-ui-sidebar）：把 footerActions 从横向
 // display:flex 改为纵向堆叠 + gap，防止多个 sidebar.footer.action 插件互相挤压重叠。
 const UI_SIDEBAR_CLIENT_PKG_REL = path.join('dsh-client-ui-sidebar', 'lib', 'client.js');
+// 移除反馈功能补丁目标（dsh-client-ui-message-feedback）：停用反馈 UI 入口（顶部菜单
+// 「反馈」项、消息赞/踩按钮、反馈弹窗与 /feedback 装饰）。
+const UI_MESSAGE_FEEDBACK_PKG_REL = path.join('dsh-client-ui-message-feedback', 'lib', 'client.js');
+// 底部面板终端补丁目标（dsh-client-ui-sidebar-terminal）：向 dsh-better-sidebar 的
+// 底部工作台注册内置交互式终端 tab，并共享 webTerminals 的窗口 hold 生命周期。
+const UI_SIDEBAR_TERMINAL_PKG_REL = path.join('dsh-client-ui-sidebar-terminal', 'lib', 'client.js');
 
 /** @deepseek-ai/<pkgRel> 落点（以 node_modules/@deepseek-ai 根为准）。 */
 function mkAi(root, pkgRel) {
@@ -359,6 +365,8 @@ module.exports = {
   CLAUDE_SUBAGENT_PKG_REL,
   SKILL_FS_PKG_REL,
   UI_SIDEBAR_CLIENT_PKG_REL,
+  UI_MESSAGE_FEEDBACK_PKG_REL,
+  UI_SIDEBAR_TERMINAL_PKG_REL,
   resolvePatchTargets,
   resolveNmRoots,
   // 兼容期旧签名（一个版本周期后删除）。

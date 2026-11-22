@@ -80,6 +80,9 @@ const INVERSE_PAIR_HINTS = {
   'onboarding-step-progress-timeout': ['STEP_GATE_OLD', 'STEP_GATE_NEW'],
   'onboarding-guard-report': ['GUARD_HELPER_ANCHOR', 'GUARD_CALLS_OLD', 'GUARD_CALLS_NEW'],
   'sidebar-footer-layout': ['SIDEBAR_FOOTER_LAYOUT_FROM', 'SIDEBAR_FOOTER_LAYOUT_TO'],
+  'sidebar-direct-settings': ['SIDEBAR_DIRECT_SETTINGS_FROM', 'SIDEBAR_DIRECT_SETTINGS_TO'],
+  'remove-feedback-ui': ['REMOVE_FEEDBACK_UI_FROM', 'REMOVE_FEEDBACK_UI_TO'],
+  'sidebar-bottom-terminal': ['SIDEBAR_BOTTOM_TERMINAL_HOLD_FROM', 'SIDEBAR_BOTTOM_TERMINAL_HOLD_TO', 'SIDEBAR_BOTTOM_TERMINAL_REG_FROM', 'SIDEBAR_BOTTOM_TERMINAL_REG_TO'],
 };
 
 const MULTI_SITE = new Set([
@@ -96,6 +99,7 @@ const MULTI_SITE = new Set([
   'pi-ai-responses-tool-name-sanitize', // 六点注入：出站 grammar/function 分支 + 回放两处 + 入站两处槽位
   'pi-ai-tool-name-wire', // 三点注入：toolsOf 出站洗名 + 回程两处 case "tool-call" 还原
   'ds-empty-thinking-strip', // 多点注入：helper + assistant 回放清理 + translate 入站流过滤与 replayState 对齐
+  'sidebar-bottom-terminal', // 双站点：retainTabs 合并 bottomTabs + betterSidebar 注册底部终端 tab
 ]);
 
 const fileSpecs = PATCH_SPECS.filter((s) => s.kind === 'file');
@@ -153,8 +157,12 @@ const EXPECTED_NON_VENDORED = [
 // 在离线闭包内，带 marker，回滚 = npm ci 即 pristine。
 // 50 = 49 ＋ sidebar-footer-layout（2026-11-22，custom 分支新增）：靶 dsh-client-ui-sidebar/lib/client.js
 // 在离线闭包内，带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
-test('审计 1：分类覆盖全部 50 个 file transform（无回滚盲区）', () => {
-  assert.equal(fileSpecs.length, 50);
+// 51 = 50 ＋ sidebar-direct-settings（2026-11-22，custom 分支新增）：靶 dsh-client-ui-settings-account/lib/client.js
+// 在离线闭包内，带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
+// 53 = 51 ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22，custom 分支新增）：
+// 靶在离线闭包内，均带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
+test('审计 1：分类覆盖全部 53 个 file transform（无回滚盲区）', () => {
+  assert.equal(fileSpecs.length, 53);
   const report = [];
   for (const spec of fileSpecs) {
     const pair = INVERSE_PAIR_HINTS[spec.id];

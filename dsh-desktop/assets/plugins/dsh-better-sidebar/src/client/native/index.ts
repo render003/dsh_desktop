@@ -384,7 +384,7 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
     const sync = (): void => {
       const wanted = new Map<string, () => () => void>()
       for (const descriptor of service.getTabs()) {
-        if (!service.isTabEnabled(descriptor.id)) continue
+        if (!service.isTabEnabled(descriptor.id) || descriptor.bottomOnly === true) continue
         wanted.set(descriptor.id, () => registerDescriptor(descriptor))
       }
       for (const [descriptorId, registration] of live) {

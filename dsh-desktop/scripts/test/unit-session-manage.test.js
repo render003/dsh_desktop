@@ -326,3 +326,30 @@ test('反证：换序（opd / wp 先跑）同样各存活一份，且二遍仍�
   assert.deepEqual(second, [0, 0, 0], `换序后二遍仍应零写入（实际 sm=${second[0]} opd=${second[1]} wp=${second[2]}）`);
   assert.equal(readSrc(file), src, '换序后二遍字节不得变化');
 });
+
+test('冷会话删除：补发 api-session/removed 且支持从旧版已打补丁产物原地升级不重复插入', (t) => {
+  const { root } = makeTree(t, defaultFixtures());
+  const stats = { anchorMissing: 0, failed: 0 };
+  patchSessionManage(root, () => {}, stats);
+  const ctrlFile = path.join(root, '@deepseek-ai', 'dsh-api-workspace-controller', 'lib', 'index.js');
+  const upgraded = fs.readFileSync(ctrlFile, 'utf8');
+  assert.ok(upgraded.includes('const dshRemovedLive = this.ctx.sessions.remove(sessionId);'), '应记录是否从 live 表摘除');
+  assert.ok(upgraded.includes('if (!dshRemovedLive) {') && upgraded.includes('this.ctx.emit("api-session/removed", sessionId)'),
+    '冷会话应补发 api-session/removed 广播');
+  assert.equal(upgraded.split('async deleteSession(request)').length - 1, 1, 'deleteSession 只能出现一次');
+
+  // 模拟存量已打旧补丁（无 api-session/removed 广播）的文件，再次跑 patchSessionManage 必须原地升级且不重复声明。
+  const wsTarget = TARGETS.find((x) => x.rel.join('/') === ['@deepseek-ai', 'dsh-api-workspace-controller', 'lib', 'index.js'].join('/'));
+  const cmdRep = wsTarget.replacements.find((r) => r.upgradeFrom);
+  assert.ok(cmdRep, 'HOST_CMDS 替换项应声明 upgradeFrom');
+  const legacy = upgraded.replace(cmdRep.insert, cmdRep.upgradeFrom);
+  assert.ok(!legacy.includes('api-session/removed'), '前置：旧产物不含冷会话广播');
+  fs.writeFileSync(ctrlFile, legacy, 'utf8');
+
+  const n = patchSessionManage(root, () => {}, { anchorMissing: 0, failed: 0 });
+  assert.equal(n, 1, '应原地升级旧 workspace-controller');
+  const after = fs.readFileSync(ctrlFile, 'utf8');
+  assert.ok(after.includes('this.ctx.emit("api-session/removed", sessionId)'), '升级后应含冷会话广播');
+  assert.equal(after.split('async deleteSession(request)').length - 1, 1, '原地升级不得重复插入 deleteSession');
+  assert.equal(patchSessionManage(root, () => {}, { anchorMissing: 0, failed: 0 }), 0, '升级后再跑应幂等零写入');
+});

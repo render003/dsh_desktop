@@ -179,6 +179,8 @@ export interface TabDescriptor {
   order?: number
   /** Hide from the + menu (the editor tab is opened by file-open, not by the menu). */
   hidden?: boolean
+  /** Keep this tab exclusive to the bottom workbench (do not mirror into DSH's native right sidebar). */
+  bottomOnly?: boolean
   /**
    * + menu disabled predicate (e.g. terminal at capacity). Receives the
    * session scope and the live sidebar state (counts, expansions).

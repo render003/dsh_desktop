@@ -117,6 +117,8 @@ const {
   DS_LLM_DEEPSEEK_PKG_REL,
   SKILL_FS_PKG_REL,
   UI_SIDEBAR_CLIENT_PKG_REL,
+  UI_MESSAGE_FEEDBACK_PKG_REL,
+  UI_SIDEBAR_TERMINAL_PKG_REL,
 } = require('./patch-target-resolver');
 
 const {
@@ -131,6 +133,9 @@ const {
   transformChatAutoLoadOlder,
   transformReasoningRowCollapseWidth,
   transformSidebarFooterLayout,
+  transformSidebarDirectSettings,
+  transformRemoveFeedbackUi,
+  transformSidebarBottomTerminal,
   transformSessionUnknownEventTolerance,
   transformReleasedV0KeysTolerance,
   transformConversationAssemblyResilience,
@@ -220,6 +225,9 @@ const {
   CHAT_AUTOLOAD_MARKER,
   REASONING_ROW_COLLAPSE_MARKER,
   SIDEBAR_FOOTER_LAYOUT_MARKER,
+  SIDEBAR_DIRECT_SETTINGS_MARKER,
+  REMOVE_FEEDBACK_UI_MARKER,
+  SIDEBAR_BOTTOM_TERMINAL_MARKER,
   SESSION_UNKNOWN_EVENT_TOLERANCE_MARKER,
   RELEASED_V0_HISTORY_MARKER,
   ASSEMBLY_RESILIENCE_MARKER,
@@ -2010,6 +2018,83 @@ const PATCH_SPECS = [
       alreadyLog: alreadySkip,
       doneLog: (file) => '已将左侧栏底部 footerActions 改为纵向堆叠与安全居中对齐 ' + file,
       failLog: (file, err) => '侧栏底部布局补丁失败(' + file + '): ' + err.message,
+    },
+  },
+  // -------------------------------------------------------------------------
+  // 左侧栏底部直达「设置」按钮（sidebar-direct-settings）：
+  // 移除 AccountMenu 里的「更多」弹出菜单以及其中的「意见反馈」「登录/退出」项，
+  // 直接在侧栏底部渲染「设置」按钮，点击立即打开设置。cli:false（与
+  // sidebar-footer-layout 同族）。
+  // -------------------------------------------------------------------------
+  {
+    id: 'sidebar-direct-settings',
+    group: 'runtime',
+    order: 405,
+    kind: 'file',
+    layout: 'runtime-local',
+    wslLayout: 'wsl',
+    pkgRel: UI_SETTINGS_ACCOUNT_PKG_REL,
+    transform: transformSidebarDirectSettings,
+    marker: SIDEBAR_DIRECT_SETTINGS_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: false,
+    logs: {
+      prefix: '侧栏直达设置按钮补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已移除更多/意见反馈/登录菜单并将设置按钮直接放至侧栏底部 ' + file,
+      failLog: (file, err) => '侧栏直达设置按钮补丁失败(' + file + '): ' + err.message,
+    },
+  },
+  // -------------------------------------------------------------------------
+  // 移除反馈功能（remove-feedback-ui）：
+  // 停用 @deepseek-ai/dsh-client-ui-message-feedback 的 UI 装配（顶栏「···」菜单里的
+  // 「反馈」项、消息赞/踩按钮、反馈弹窗与 /feedback 装饰全部移除）。cli:false。
+  // -------------------------------------------------------------------------
+  {
+    id: 'remove-feedback-ui',
+    group: 'runtime',
+    order: 406,
+    kind: 'file',
+    layout: 'runtime-local',
+    wslLayout: 'wsl',
+    pkgRel: UI_MESSAGE_FEEDBACK_PKG_REL,
+    transform: transformRemoveFeedbackUi,
+    marker: REMOVE_FEEDBACK_UI_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: false,
+    logs: {
+      prefix: '移除反馈功能补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已停用反馈功能 UI（顶栏菜单反馈项与消息反馈控件） ' + file,
+      failLog: (file, err) => '移除反馈功能补丁失败(' + file + '): ' + err.message,
+    },
+  },
+  // -------------------------------------------------------------------------
+  // 底部面板增加终端功能（sidebar-bottom-terminal）：
+  // 复用内核 @deepseek-ai/dsh-client-ui-sidebar-terminal 的 LazyTerminalBody 与
+  // ctx.webTerminals，在 dsh-better-sidebar 就绪时向底部工作台注册 bottomOnly 终端 tab，
+  // 并同步维护 webTerminals.retainTabs 窗口 hold。cli:false。
+  // -------------------------------------------------------------------------
+  {
+    id: 'sidebar-bottom-terminal',
+    group: 'runtime',
+    order: 407,
+    kind: 'file',
+    layout: 'runtime-local',
+    wslLayout: 'wsl',
+    pkgRel: UI_SIDEBAR_TERMINAL_PKG_REL,
+    transform: transformSidebarBottomTerminal,
+    marker: SIDEBAR_BOTTOM_TERMINAL_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: false,
+    logs: {
+      prefix: '底部面板终端补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已向底部工作台注册内置终端标签页并同步窗口 hold ' + file,
+      failLog: (file, err) => '底部面板终端补丁失败(' + file + '): ' + err.message,
     },
   },
 ];

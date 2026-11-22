@@ -104,7 +104,11 @@ test('A. file spec transform 均为函数且来自收口导出（无内联孤儿
   // 正文通道泄漏的纯空 <thinking>/<think> 标签，阻断长会话上下文自激复读）。
   // 50 = 49 ＋ sidebar-footer-layout（2026-11-22，custom 分支新增：把左侧栏底部 footerActions
   // 改为纵向堆叠 + gap + 折叠态 safe center，避免多插件挤压重叠）。
-  assert.equal(fileSpecs.length, 50, `file spec 应有 50 个，得 ${fileSpecs.length}`);
+  // 51 = 50 ＋ sidebar-direct-settings（2026-11-22，custom 分支新增：移除侧栏底部更多/意见反馈/登录菜单，
+  // 直接在底部放置「设置」按钮）。
+  // 53 = 51 ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22，custom 分支新增：移除反馈功能
+  // 并在底部工作台增加终端 tab）。
+  assert.equal(fileSpecs.length, 53, `file spec 应有 53 个，得 ${fileSpecs.length}`);
   for (const spec of fileSpecs) {
     assert.equal(typeof spec.transform, 'function', `${spec.id} 缺 transform`);
     assert.ok(
@@ -267,7 +271,9 @@ test('E. order 全局唯一、组内升序、补丁间依赖序成立', () => {
   // 61 = 60 ＋ ds-empty-thinking-strip（order 342，cli:true）：拦截官方 DeepSeek Messages
   // 正文通道泄漏的纯空 <thinking>/<think> 标签，阻断长会话上下文自激复读。
   // 62 = 61 ＋ sidebar-footer-layout（order 404，cli:false）：左侧栏底部动作区纵向堆叠布局修复。
-  assert.equal(PATCH_SPECS.length, 62, 'spec 总数应为 62');
+  // 63 = 62 ＋ sidebar-direct-settings（order 405，cli:false）：移除侧栏底部更多/意见反馈/登录菜单并直接放置设置按钮。
+  // 65 = 63 ＋ remove-feedback-ui（order 406）＋ sidebar-bottom-terminal（order 407）：移除反馈功能 + 底部面板终端。
+  assert.equal(PATCH_SPECS.length, 65, 'spec 总数应为 65');
   const orders = PATCH_SPECS.map((s) => s.order);
   assert.equal(new Set(orders).size, orders.length, 'order 必须全局唯一');
   const byId = Object.fromEntries(PATCH_SPECS.map((s) => [s.id, s]));
