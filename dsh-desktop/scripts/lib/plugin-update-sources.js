@@ -28,6 +28,9 @@ const UPDATE_SOURCES = Object.freeze({
   'better-sidebar': { kind: 'npm', pkg: 'dsh-better-sidebar' },
   // 手机访问（dsh-pocket）：纳入桌面桥更新源，设置页点「更新」直接走 npm tarball + 保留内层 node_modules。
   'dsh-pocket': { kind: 'npm', pkg: 'dsh-pocket' },
+  // 上下文洞察（dsh-context）与消息撤回重编辑（dsh-easyrewrite）：均为 npm 官方上游包，纳入独立更新源。
+  'dsh-context': { kind: 'npm', pkg: 'dsh-context' },
+  'dsh-easyrewrite': { kind: 'npm', pkg: 'dsh-easyrewrite' },
 
   // ── 2026-10-22 新增的随包插件（bot/ds-bot 已于 2026-11-22 退役移除） ──
   'web-search-free': { kind: 'npm', pkg: 'dsh-free-search' },

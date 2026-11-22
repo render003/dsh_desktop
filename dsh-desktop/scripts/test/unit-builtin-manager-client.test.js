@@ -844,3 +844,21 @@ test('反证 8：摘掉行内接管期说明后，bili-native 行上那句话消
   assert.doesNotMatch(textAll(cardOf(tree, 'bili-native')), /接管期说明/,
     '渲染色块摘掉后文案必须消失——否则上面的用例是在为不存在的渲染作证');
 });
+
+test('中文别名展示与搜索：dsh-context 展示「上下文洞察」且支持按中文名搜到', async () => {
+  const bridge = {
+    list: async () => ([
+      row({ id: 'dsh-context', name: 'dsh-context', version: '0.86.0', description: 'A DeepSeek Harness plugin for context insight' }),
+      row({ id: 'shop', name: 'dsh-plugin-shop', version: '0.9.4', description: 'Plugin shop' })
+    ]),
+    setEnabled: async () => ({ ok: true })
+  };
+  const { Component } = loadPanel({ dshDesktop: { pluginManager: bridge } });
+  const mounter = createMounter(Component, {});
+  let tree = await mounter.settle();
+  assert.match(textAll(cardOf(tree, 'dsh-context')), /上下文洞察/, '中文环境下应展示中文别名');
+  await searchInput(tree).props.onChange({ target: { value: '上下文洞察' } });
+  tree = await mounter.settle();
+  assert.equal(cards(tree).length, 1, '搜「上下文洞察」应精准命中 dsh-context');
+  assert.equal(cards(tree)[0].props['data-plugin-id'], 'dsh-context');
+});

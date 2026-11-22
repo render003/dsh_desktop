@@ -143,8 +143,9 @@ window.__ModuleLoader__.load({
         + "auto-compaction no longer runs. That is what a working takeover looks like, not a broken install."
     };
     // 语言每次渲染时取：页面刷新即换，不值得为它订阅字典事件。
-    const dict = () => (String((typeof navigator !== "undefined" && navigator.language) || "")
-      .toLowerCase().indexOf("zh") === 0 ? ZH : EN);
+    const isZh = () => String((typeof navigator !== "undefined" && navigator.language) || "")
+      .toLowerCase().indexOf("zh") === 0;
+    const dict = () => (isZh() ? ZH : EN);
 
     // 与本包 cordis.patch.yml 的 loader id、sidecar 行 id 同值（回归测试咬三方一致）。
     const SELF = "dsh-builtin-manager";
@@ -152,6 +153,43 @@ window.__ModuleLoader__.load({
     // 不参与「单个更新」的件：better-sidebar 随包整包换代（sidecar 的 checkUpdates 也
     // 把它排除了）。按 id 兜底，避免后端契约变化时界面画出必然失败的按钮。
     const UPDATE_EXCLUDED_ID = "better-sidebar";
+
+    // 常用内置件的中文展示别名（供中文界面辨识与搜索命中，解决纯英文 package.json 如
+    // dsh-context 搜「上下文洞察」搜不到的问题）。
+    const ZH_ALIASES = {
+      "balance": "余额显示",
+      "file-changes": "文件变动",
+      "better-sidebar": "侧边卡片",
+      "dsh-session-manager": "归档对话管理",
+      "conversation-tweaks": "对话增强",
+      "dsh-super-injector": "超级注入器",
+      "prompt-custom": "自定义提示词",
+      "workspace-anchor": "工作区锚点",
+      "wsl-settings": "WSL 后端",
+      "bili-native": "上下文压缩（bili）",
+      "dsh-pocket": "手机访问",
+      "openclaw-bridge": "ClawBot 桥接",
+      "input-history": "输入历史",
+      "dsh-easyrewrite": "消息撤回重编辑",
+      "change-review": "AI 变更审核",
+      "offpeak": "峰谷价格卫士",
+      "settings-nav-custom": "设置导航自定义",
+      "settings-groups": "设置高级分组",
+      "synapse": "会话地图",
+      "dsh-subagent-lens": "子代理活动快视",
+      "basics-panel": "基础能力面板",
+      "input-fold": "提示词折叠",
+      "prompt-optimizer": "提示词润色优化",
+      "dsh-builtin-manager": "内置插件管理",
+      "goal-completion": "目标收尾",
+      "web-search-free": "免费搜索",
+      "shop": "插件商店",
+      "network-proxy": "网络代理",
+      "mcp-manager-ui": "工具箱",
+      "dsh-notify": "桌面通知",
+      "dsh-context": "上下文洞察"
+    };
+    const aliasOf = (row) => (row && typeof row.id === "string" && ZH_ALIASES[row.id]) || "";
 
     // 接管类内置件：它们装上去的第一件事是**改掉内核原有行为**，而用户看到的是
     // 「某个功能不见了」。这类误解是本仓库真付过代价的一类报障（「上下文压缩插件有问题」），
@@ -186,6 +224,7 @@ window.__ModuleLoader__.load({
       body: { flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 },
       nameRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
       name: { fontWeight: 600, fontSize: 13, lineHeight: "20px", color: "var(--dsw-alias-label-primary)", wordBreak: "break-all" },
+      alias: { fontSize: 12, lineHeight: "18px", color: "var(--dsw-alias-label-secondary)", fontWeight: 500 },
       // 版本号 / 「最新 x」共用：muted 小字，等宽数字（同一列比较版本时不会跳）。
       version: {
         fontSize: 12, lineHeight: "18px", color: "var(--dsw-alias-label-tertiary)",
@@ -358,7 +397,7 @@ window.__ModuleLoader__.load({
         if (filter === "on" && row.enabled !== true) return false;
         if (filter === "off" && row.enabled === true) return false;
         if (q === "") return true;
-        return [row.name, row.id, row.description].some((v) => String(v || "").toLowerCase().indexOf(q) !== -1);
+        return [row.name, row.id, row.description, aliasOf(row)].some((v) => String(v || "").toLowerCase().indexOf(q) !== -1);
       });
       const enabledCount = rows.filter((r) => r.enabled === true).length;
       const anyBusy = Object.keys(busy).length > 0 || Object.keys(updating).length > 0;
@@ -458,6 +497,7 @@ window.__ModuleLoader__.load({
                         style: S.nameRow,
                         children: [
                           jsx("span", { style: S.name, children: row.name || row.id }, "name"),
+                          isZh() && aliasOf(row) ? jsx("span", { style: S.alias, children: aliasOf(row) }, "alias") : null,
                           row.version ? jsx("span", { style: S.version, children: displayVersion(row.version) }, "version") : null,
                           jsx(Tag, {
                             tone: row.enabled === true ? "success" : "neutral",
