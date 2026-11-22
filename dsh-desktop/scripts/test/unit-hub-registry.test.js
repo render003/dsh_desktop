@@ -847,8 +847,8 @@ test('收口：每条在册件的 loader id 必须命中自己的 cordis.patch.y
   // （2026-10-16 随 #30 由 28 抬到 29，2026-10-17 随 reasoning-effort 退役回落到 28，
   // 2026-10-22 随五个上游件内置由 28 抬到 33，2026-11-08 随 quest-ui / auto-compact /
   // zcode-migrate 三件退役由 33 回落到 30）。
-  assert.equal(COMPANION_PLUGINS.length - misses.length, 32,
-    '实际命中的补丁件数应是 30（31 减 1 条例外），当前判据脱靶');
+  assert.equal(COMPANION_PLUGINS.length - misses.length, 31,
+    '实际命中的补丁件数应是 31（32 减 1 条例外），当前判据脱靶');
 
   // 反证 1：id 与清单不一致必须报失配（拿临时目录合成，不碰仓库）。
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-mount-audit-'));

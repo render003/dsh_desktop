@@ -33,8 +33,6 @@
 | 7 | `openExternal(url: string): Promise<any>` | 系统浏览器打开 URL（端口预览） | `dsh:open-external` → `open_external` |
 | 8 | `copyText(text: string): Promise<any>` | 复制到剪贴板 | `dsh:copy-text` → `copy_text` |
 | 9 | `getPathForFile(file: File): string` | **同步**。浏览器 File → 磁盘路径；非桌面环境/失败返回 `''`（插件自行降级） | 本地实现（Electron webUtils / Tauri 无直接等价，见 §6-R1） |
-| 10 | `sponsorQr(): Promise<{ok: boolean, alipay?: string, wechat?: string}>` | 赞助二维码（data URI）。`ok:false` = supervisor 未初始化（无图）；`ok:true` 时 `alipay`/`wechat` 为 data URI（对应图片缺失时回空串） | `dsh:sponsor-qr` → `sponsor_qr` |
-| 11 | `sponsorWindow(): Promise<any>` | 打开独立赞助小窗（主进程单例） | `chrome:sponsor-window` → `sponsor_window` |
 | 12 | `onNotificationJump(cb: (e: {sessionId: string}) => void): () => void` | 订阅通知点击跳转。**2026-10-22 起壳层不再主动发射**（回合完成通知由内置插件 `dsh-notify` 在渲染进程发送）；方法位与垫片监听保留以兼容旧页面调用，订阅前补发逻辑仅对垫片缓存生效（当前无来源） | 事件 `dsh:notification-jump` → event `notification-jump`（无生产者） |
 
 ### 2.2 `windowControls`（窗口控制，5 项）
@@ -63,11 +61,8 @@
 | `reload` | 主窗当前页软重载（Electron reloadMainWindow 语义） | `null` |
 | `devtools` | 开 DevTools（仅 debug 构建；release 返回 `{ok:false}`） | `{ok}` |
 | `fullscreen` | 全屏切换 | `{fullscreen}` |
-| `about` | 关于信息（应用版本/平台/内核版本） | `{appVersion, platform, kernelVersion}` |
 | `quit` | 退出应用（托盘「退出」同语义：先杀内核树再 exit） | `null` |
-| `toggle-close-to-tray` / `toggle-auto-update` | settings 单键切换（`closeToTray` / `autoInstallUpdates`，垫片 merge 进菜单 state 重渲染）。历史：`toggle-notify`（`notifyOnTurnEnd`）2026-10-22 随壳层回合完成通知下线移除——通知改由内置插件 `dsh-notify` 发送；`toggle-balance`（`showBalanceDock`）2026-10-16 退役——它写壳侧 settings.json，与 dsh-balance 插件读的内核设置条目是两条互不相通的线；开关唯一落点已是插件导出的 Config 设置条目 | `{<settings键>: <新值>}` |
-| `check-client-update` | **双源客户端更新检查**（GitHub + Gitee releases/latest 并发探测，资产级回落；语义化比较防降级；`updater_client::check_latest`）。历史：`check-agent-update`（npm 内核比对）已随「内核随客户端分发、无 overlay 更新链」设计退役 | `{ok, current, next, notes, asset, source}` 或 `{ok, upToDate}` |
-| `install-client-update` | 下载并安装客户端更新（`download_to_temp` 流式下载+sha256 校验【GitHub digest > .sha256 边车 > size/50MB 兜底；HashMismatch 时自动换另一源重试一次——镜像漂移救回、真篡改仍硬失败】；Windows NSIS `/S /R /UPDATE` 静默升级保数据→shutdown→exit 由安装器 `/R` 重启；macOS 开 DMG 手动引导；Linux AppImage 原子自替换） | `{ok, upToDate:true}`（已最新，不空装）／ Windows `{ok, installing}` / mac `{ok, manual:true, version}` / linux `{ok, replaced, manual, version}` |
+| `toggle-close-to-tray` | settings 单键切换（`closeToTray`，垫片 merge 进菜单 state 重渲染）。历史：`toggle-auto-update` / `check-client-update` / `install-client-update` / `about` 与赞助窗（`sponsorQr` / `sponsorWindow`）已于 2026-11-22 在 `custom` 分支整体裁撤；`toggle-notify`（`notifyOnTurnEnd`）2026-10-22 退役；`toggle-balance`（`showBalanceDock`）2026-10-16 退役 | `{<settings键>: <新值>}` |
 | `set-custom-icon` | 设置自定义桌面客户端图标（`payload.dataUrl` 为 PNG/ICO base64 data URL；壳侧魔数白名单校验+解码、落 app_data 副本、`WebviewWindow::set_icon` + `TrayIcon::set_icon` 同步主窗+托盘；重启后重放） | `{ok, format}` |
 | `reset-custom-icon` | 恢复默认桌面客户端图标（删除自定义图标副本，恢复 `default_window_icon` 到主窗+托盘） | `{ok}` |
 
@@ -167,8 +162,7 @@
 - **R1 `getPathForFile`**：Electron `webUtils.getPathForFile` 读浏览器 File 的磁盘路径。Tauri 无直接等价（WebView2 侧 File 对象拿不到完整路径）。曾计划的迁移方案（拖拽改走 Tauri `onDragDropEvent`、Rust 侧给路径列表、垫片在 drop 事件里回填 `file.path`）随 dsh-file-drop 插件于 2026-10 一并裁撤，**现为恒等降级实现**：`file.path` 是字符串就透传，否则返回 `''`（与「浏览器打开 WebUI」时同语义，插件已有降级路径）。
 - **同步 send 方法**（仅 `floatWindow.close`）：Tauri command 天然异步；垫片保持同步返回 `void` 语义（内部 fire-and-forget invoke，`.catch` 静默），插件不感知差异。宠物窗三个同步 send 方法随 harness-pet 退役移除。
 - **远程页注入**：内核 Web UI 是 `http://127.0.0.1:<port>` 远程页。Tauri 2 经 capability `remote.urls` 放行该 origin 的 IPC；垫片作为 `initialization_script` 每次导航注入。命令侧再做 origin 白名单（沿用 Electron `pluginManagerIpcAllowed` 语义：插件管理通道仅主窗 origin 可调）。PoC-A 验证此链路。
-- **菜单裁撤**：内核自动更新链（overlay 布局 / runUpdateFlow / 定时触发）已删除；`check-agent-update`（npm registry 内核版本比对）已整体退役——Tauri 版内核随客户端分发、无 overlay 更新链，客户端更新检查（`check-client-update`，GitHub+Gitee 双源 releases）完全取代其在 ⋯ 菜单的位置。
-- **赞助窗实现注记（v0.5.0 终修）**：`sponsor_window` 为单例（已开则 show+focus 并返回 `{ok, reused:true}`）；HTML（内联 data URI 二维码图片）写 `%TEMP%\dsh-sponsor\sponsor.html` 后 `file://` 直载（绕开 WebView2 大 data URL 整页导航限制与 file:// 相对路径图片拦截）；原生标题栏（decorations+closable），不加自定义 CloseRequested 处理器（默认关闭即 destroy——回调内 destroy 曾致 UI 线程死锁）。
+- **菜单裁撤**：内核自动更新链（overlay 布局 / runUpdateFlow / 定时触发）与 `check-agent-update` 已退役；2026-11-22 `custom` 分支进一步裁撤客户端自更新链（`check-client-update` / `install-client-update` / `toggle-auto-update` / 更新源展示）、赞助窗（`sponsorQr` / `sponsorWindow`）与 `about` 菜单项及全部对应实现代码。
 - **`restart_service` 的 `intent` 载荷**：垫片 `restartService()` invoke 时携带
   `{intent:'restart-service'}`（Electron 母本遗留的意图字段），但 Tauri
   `restart_service(app, window)` 命令签名**不含 `intent` 参数**——该载荷不被

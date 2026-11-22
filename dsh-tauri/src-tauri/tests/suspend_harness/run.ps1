@@ -12,9 +12,36 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = "C:\Users\delinger\Desktop\dsh"
-# 二进制选择：S1_EXE 环境变量可覆盖（复测修复版用 target-s1）。
-$exe = if ($env:S1_EXE) { $env:S1_EXE } else { Join-Path $repo "dsh-tauri\src-tauri\target\release\dsh-tauri-app.exe" }
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")).Path
+function Resolve-DefaultReleaseExe {
+  param([string]$RepoRoot)
+  $manifest = Join-Path $RepoRoot "dsh-tauri\src-tauri\Cargo.toml"
+  $targetRoot = Join-Path $RepoRoot "dsh-tauri\src-tauri\target"
+  try {
+    $metaJson = & cargo metadata --manifest-path $manifest --format-version 1 --no-deps 2>$null
+    if ($LASTEXITCODE -eq 0 -and $metaJson) {
+      $meta = $metaJson | ConvertFrom-Json
+      if ($meta.target_directory) { $targetRoot = $meta.target_directory }
+    }
+  } catch {}
+  $profile = if ($env:PROFILE) { $env:PROFILE } else { "release" }
+  $triple = if ($env:TARGET_TRIPLE) { $env:TARGET_TRIPLE } elseif ($env:CARGO_BUILD_TARGET) { $env:CARGO_BUILD_TARGET } else { "" }
+  if ($triple) {
+    return (Join-Path (Join-Path (Join-Path $targetRoot $triple) $profile) "dsh-tauri-app.exe")
+  }
+  $candidates = @(
+    (Join-Path (Join-Path (Join-Path $targetRoot "x86_64-pc-windows-msvc") $profile) "dsh-tauri-app.exe"),
+    (Join-Path (Join-Path (Join-Path $targetRoot "x86_64-pc-windows-gnu") $profile) "dsh-tauri-app.exe"),
+    (Join-Path (Join-Path (Join-Path $targetRoot "aarch64-pc-windows-msvc") $profile) "dsh-tauri-app.exe"),
+    (Join-Path (Join-Path $targetRoot $profile) "dsh-tauri-app.exe")
+  )
+  foreach ($cand in $candidates) {
+    if (Test-Path $cand) { return $cand }
+  }
+  return $candidates[0]
+}
+# 二进制选择：S1_EXE 环境变量可覆盖；否则通过 cargo metadata 定位实际 target_directory 下的产物。
+$exe = if ($env:S1_EXE) { $env:S1_EXE } else { Resolve-DefaultReleaseExe -RepoRoot $repo }
 Write-Host "[harness] exe=$exe"
 # 固定沙箱（不带 $PID）：跨模式调用复用同一实例
 $sandbox = Join-Path $env:TEMP "dsh-s1-harness"

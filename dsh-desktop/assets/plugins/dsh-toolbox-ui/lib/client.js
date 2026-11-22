@@ -661,11 +661,11 @@ const MCP_CSS = `body{--mcp-accent:var(--dsw-alias-brand-primary);--mcp-ok:var(-
 /* 一键升级按钮：与 .dsh-mcp-btn.primary 同令牌，但更小——它长在提示条里，不该抢面板主操作的视觉权重。 */
 /* 左侧栏底部入口（sidebar.footer.action）：与 DSH 侧栏底部其它控件同规格——
    展开态是 42px 行（图标 + 文字），收起轨道是 36px 圆钮（仅图标）。 */
-.dsh-mcp-footer-action{display:inline-flex;align-items:center;gap:8px;width:100%;height:42px;box-sizing:border-box;margin:0 -2px;padding:0 10px 0 8px;border:none;border-radius:var(--mcp-r-md);background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;cursor:pointer;transition:background .15s}
+.dsh-mcp-footer-action{display:flex;align-items:center;gap:var(--dsh-sidebar-label-gap,8px);inline-size:100%;min-inline-size:0;height:42px;box-sizing:border-box;margin:0;padding:0 calc(var(--dsh-sidebar-row-padding,12px) - var(--dsh-sidebar-paint-inset,4px));border:none;border-inline:var(--dsh-sidebar-paint-inset,4px) solid transparent;border-radius:var(--mcp-r-md);background:transparent;background-clip:padding-box;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;line-height:22px;cursor:pointer;transition:background .15s}
 .dsh-mcp-footer-action:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsh-mcp-footer-action:active{background:var(--dsw-alias-interactive-bg-active)}
-.dsh-mcp-footer-action.rail{justify-content:center;gap:0;width:36px;height:36px;margin:0;padding:0;border-radius:50%;corner-shape:round}
-.dsh-mcp-footer-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-mcp-footer-action.rail{justify-content:center;gap:0;inline-size:36px;height:36px;margin:0;padding:0;border-inline:0;border-radius:50%;corner-shape:round}
+.dsh-mcp-footer-name{min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-box:trim-both cap alphabetic}
 /* 响应式覆盖必须位于全部基础规则之后：同特异性下后出现者胜出。 */
 @media (max-width:760px){.dsh-mcp-panel-overlay{padding:10px}.dsh-mcp-panel{max-width:none;width:100%;height:calc(100dvh - 20px);border-radius:var(--mcp-r-panel)}.dsh-mcp-panel .dsh-mcp-wrap{padding:12px}.dsh-mcp-head{align-items:flex-start}.dsh-mcp-body{flex-direction:column;overflow-y:auto;overflow-x:hidden}.dsh-mcp-side,.dsh-mcp-ws-body{width:auto;min-width:0;max-height:none;flex:none}.dsh-mcp-side:not(.embedded) .dsh-mcp-list{max-height:38vh}.dsh-mcp-section.local{flex:none;min-height:0;max-height:none}.dsh-mcp-section.local .dsh-mcp-list{max-height:30vh}.dsh-mcp-global-list{max-height:30vh}.dsh-mcp-detail{padding:12px;flex:none;overflow:visible}.dsh-mcp-d-body{overflow:visible}.dsh-mcp-d-title{flex:none}.dsh-mcp-d-head{flex-direction:column}.dsh-mcp-kv-edit{grid-template-columns:minmax(90px,35%) minmax(0,1fr) auto}}
 /* 窄屏：标题与关闭留在第一行，能力层与操作区各占一整行。

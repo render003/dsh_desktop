@@ -337,7 +337,6 @@ pub fn run() {
     // 仍保留：ACP 授权与崩溃循环两条通知仍在用（见 lib.rs 内 notification() 调用）。
     let app = builder
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             setup(app)?;
             Ok(())
@@ -359,7 +358,6 @@ pub fn run() {
             commands::recovery_restart,
             commands::recovery_open_logs,
             commands::recovery_safe_mode,
-            commands::sponsor_window,
             commands::float_window,
             commands::float_close,
             // Phase 2
@@ -384,7 +382,6 @@ pub fn run() {
             commands::wsl_config_save,
             commands::wsl_recheck,
             commands::guard_action,
-            commands::sponsor_qr,
             // PoC 工具（非契约成员）
             commands::poc_echo_json,
         ])
@@ -581,49 +578,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // 坏图标/解码失败内部已回退默认并日志，绝不阻断启动。
     commands::icon::apply_custom_icon_if_present(app.handle());
 
-    // ---- 客户端更新静默检查（一次性，不阻塞启动；引擎见 commands/updater_client.rs）----
-    // 独立线程 + 延迟 15s：不挤占启动关键路径（内核拉起/首屏），也给内核页
-    // 挂事件监听留时间；无更新 → 零打扰；离线/失败 → 完全静默（仅日志取证）；
-    // 有更新 → emit `client-update-available`（**事件名与载荷契约**：
-    // {"current","next","notes","asset":{"name","url","size"},"source":
-    // "github"|"gitee"}，U2 垫片消费；webview 若尚未挂监听而错过，可经菜单
-    // check-client-update 通道主动再查兜底）。PoC 回归/测试隔离模式不查。
-    if !poc_mode && std::env::var("DSH_TAURI_TEST_ISOLATION").ok().as_deref() != Some("1") {
-        let handle = app.handle().clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(15));
-            // 定期重检（v0.6.3）：不止启动 15s 查一次——常年挂机用户（桌面端
-            // 主用法）也要在当天内被新版本敲门。6h 一查（双源元数据 GET，
-            // 成本可忽略）；UpToDate 零打扰；退出态停摆；emit 包 panic 隔离
-            //（退出竞态下戳已 Destroyed 的事件循环会 panic，同 route 线口径）。
-            loop {
-                if EXITING.load(Ordering::Relaxed) {
-                    return;
-                }
-                match tauri::async_runtime::block_on(commands::updater_client::check_latest(env!("CARGO_PKG_VERSION"))) {
-                    Ok(commands::updater_client::CheckOutcome::Available(u)) => {
-                        route_log(format!(
-                            "[update] 检测到客户端新版本 {} → {}（{}，{}）",
-                            u.current, u.next, u.source, u.asset.name
-                        ));
-                        let h = handle.clone();
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                            let _ = h.emit("client-update-available", &u);
-                        }));
-                    }
-                    Ok(commands::updater_client::CheckOutcome::UpToDate) => {}
-                    Err(e) => route_log(format!("[update] 更新检查失败（静默忽略）：{e}")),
-                }
-                for _ in 0..(6 * 60) {
-                    // 分段睡眠：退出响应 ≤6s，不生硬 sleep 6h。
-                    if EXITING.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_secs(6));
-                }
-            }
-        });
-    }
     Ok(())
 }
 
@@ -2674,7 +2628,7 @@ mod panic_hook_tests {
 
 // ---------------------------------------------------------------------------
 // TA1 测试加固门（用户批准的最小 cfg(test)] 门）：仅测试构建链接下方两个
-// 单元测试文件——它们需要访问私有 mod（commands::updater_client / logging）
+// 单元测试文件——需要访问私有 mod（logging）
 // 内的 pub 契约，tests/ 集成测试不可达。纯追加，零生产路径改动。
 // ---------------------------------------------------------------------------
 #[cfg(test)]

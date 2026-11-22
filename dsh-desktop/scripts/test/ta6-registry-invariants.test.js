@@ -100,7 +100,11 @@ test('A. file spec transform 均为函数且来自收口导出（无内联孤儿
   // 48 = 49 − client-boot-failure-report（2026-11-12 退役：靶面 dsh-client-web/lib/index.js
   // 是构建期源码、运行时永不执行；0.2.2-rc.2 的 bootClient 又自带 assertEntriesActive，
   // 上游已在源头修掉这条静默失败。客户端失败可见性只剩 kernel-web-boot-watchdog）。
-  assert.equal(fileSpecs.length, 48, `file spec 应有 48 个，得 ${fileSpecs.length}`);
+  // 49 = 48 ＋ ds-empty-thinking-strip（2026-11-22，custom 分支新增：拦截 DeepSeek Messages
+  // 正文通道泄漏的纯空 <thinking>/<think> 标签，阻断长会话上下文自激复读）。
+  // 50 = 49 ＋ sidebar-footer-layout（2026-11-22，custom 分支新增：把左侧栏底部 footerActions
+  // 改为纵向堆叠 + gap + 折叠态 safe center，避免多插件挤压重叠）。
+  assert.equal(fileSpecs.length, 50, `file spec 应有 50 个，得 ${fileSpecs.length}`);
   for (const spec of fileSpecs) {
     assert.equal(typeof spec.transform, 'function', `${spec.id} 缺 transform`);
     assert.ok(
@@ -260,7 +264,10 @@ test('E. order 全局唯一、组内升序、补丁间依赖序成立', () => {
   // failed to load 与发送文件恒报 prompt rejected 两轮发布查不下去的直接原因——
   // rc.2 导入失败只进 cordis 内存环形缓冲、非核心条目不再抛 StartupError，真因
   // 三重静默）。均 cli:false，故 cli:true 计数不变。
-  assert.equal(PATCH_SPECS.length, 60, 'spec 总数应为 60');
+  // 61 = 60 ＋ ds-empty-thinking-strip（order 342，cli:true）：拦截官方 DeepSeek Messages
+  // 正文通道泄漏的纯空 <thinking>/<think> 标签，阻断长会话上下文自激复读。
+  // 62 = 61 ＋ sidebar-footer-layout（order 404，cli:false）：左侧栏底部动作区纵向堆叠布局修复。
+  assert.equal(PATCH_SPECS.length, 62, 'spec 总数应为 62');
   const orders = PATCH_SPECS.map((s) => s.order);
   assert.equal(new Set(orders).size, orders.length, 'order 必须全局唯一');
   const byId = Object.fromEntries(PATCH_SPECS.map((s) => [s.id, s]));
@@ -312,8 +319,10 @@ test('E3. device-auth 154 与 credentials-absent 153 相邻无干扰', () => {
   );
 });
 
-test('F. cli:true 恰为 25 项；failPolicy ∈ {warn,degrade}', () => {
+test('F. cli:true 恰为 26 项；failPolicy ∈ {warn,degrade}', () => {
   const cliSpecs = registry.getSpecsByCli();
+  // 26 = 25 ＋ ds-empty-thinking-strip（2026-11-22，custom 分支新增：拦截 DeepSeek Messages
+  // 正文通道泄漏的纯空 <thinking>/<think> 标签，需进 payload 故 cli:true）。
   // 25 = 26 − agent-loop-scheduler-guard（0.2.2-rc.1 退役：TOOL_RUNTIME_SCHEDULER
   // 符号面整体删除，工具批改走 this.loopCtx.tools.execute，见 E 的 60 基线说明）。
   // 同批退役的 menu-viewport 是 cli:false，不影响本计数。
@@ -322,7 +331,7 @@ test('F. cli:true 恰为 25 项；failPolicy ∈ {warn,degrade}', () => {
   // 25 = 26（更早基线）− pi-ai-opencode-go-models（0.2.1-rc.1 退役，见 E）；
   // 26 = 28（再上一基线）− atomic-write-orphan-lock − model-image-input（两条 rc.2 退役，
   // 见 E 的①–⑥）；token-meter-clamp / preset-seat-fix 早在 0.1.5-rc.1 同批退役。
-  assert.equal(cliSpecs.length, 25, 'cli:true 数量（含 skill-dirs-compat + pi-ai-4xx-dump + workspace-chip-label-hold + pi-ai Responses 工具名净化 + pi-ai 工具名 wire 中央收口 + pi-ai 配额耗尽不重试 + appboot-bootstrap-singleton；atomic-write-orphan-lock / model-image-input / token-meter-clamp / pi-ai-opencode-go-models / agent-loop-scheduler-guard 已退役）');
+  assert.equal(cliSpecs.length, 26, 'cli:true 数量（含 ds-empty-thinking-strip + skill-dirs-compat + pi-ai-4xx-dump + workspace-chip-label-hold + pi-ai Responses 工具名净化 + pi-ai 工具名 wire 中央收口 + pi-ai 配额耗尽不重试 + appboot-bootstrap-singleton）');
   for (const s of cliSpecs) assert.equal(s.cli, true);
   for (const spec of PATCH_SPECS) {
     assert.ok(

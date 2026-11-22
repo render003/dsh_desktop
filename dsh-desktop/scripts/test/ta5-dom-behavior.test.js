@@ -402,8 +402,7 @@ function bootPage(script, { dshDesktop, prebuild = [] } = {}) {
 
 const APP_INFO = {
   appVersion: '1.2.3', agentVersion: '0.9.7', agentSource: 'bundled',
-  notifyOnTurnEnd: true, closeToTray: true, autoInstallUpdates: false,
-  repoUrls: { github: 'https://github.com/a/b', gitee: 'https://gitee.com/a/b' }
+  closeToTray: true,
 };
 
 async function main() {
@@ -557,28 +556,19 @@ async function main() {
     check('标题版本行 v1.2.3', menuPanel.querySelector('.dch-mh-ver').textContent === 'v1.2.3');
     check('agent 版本/来源行', menuPanel.querySelector('.dch-mh-sub').textContent.includes('0.9.7')
       && menuPanel.querySelector('.dch-mh-sub').textContent.includes('bundled'));
-    const rows = menuPanel.querySelectorAll('.dch-repo-row');
-    check('更新源两行（github + gitee）', rows.length === 2
-      && menuPanel.textContent.includes('https://github.com/a/b')
-      && menuPanel.textContent.includes('https://gitee.com/a/b'));
-    const copies = menuPanel.querySelectorAll('.dch-copy');
-    check('两个复制按钮', copies.length === 2);
-    check('自动安装更新开关行（缺省未开）',
-      menuPanel.querySelector('[data-act="toggle-auto-update"]').textContent.includes('自动安装客户端更新')
-      && !menuPanel.querySelector('[data-act="toggle-auto-update"]').textContent.includes('✓'));
+    check('客户端更新/更新源/自动更新/赞助/关于入口已整体裁撤',
+      menuPanel.querySelectorAll('.dch-repo-row').length === 0
+      && menuPanel.querySelectorAll('.dch-copy').length === 0
+      && !menuPanel.querySelector('[data-act="check-client-update"]')
+      && !menuPanel.querySelector('[data-act="toggle-auto-update"]')
+      && !menuPanel.querySelector('[data-act="sponsor"]')
+      && !menuPanel.querySelector('[data-act="about"]')
+      && !html.includes('请作者喝咖啡')
+      && !html.includes('关于 DSH Pack'));
     check('关闭时最小化到托盘开关 ✓（menuState merge 生效）',
       menuPanel.querySelector('[data-act="toggle-close-to-tray"]').textContent.includes('✓'));
     check('会话完成通知开关已下线（壳层通知改由 dsh-notify 插件发送）',
       !menuPanel.querySelector('[data-act="toggle-notify"]'));
-
-    // 复制按钮：copy_text invoke + 「已复制 ✓」+ 1.2s 还原
-    copies[0].onclick();
-    await flush();
-    const copyCall = s.last('copy_text');
-    check('复制点击 → copy_text invoke（github 地址）', copyCall && copyCall.args.text === 'https://github.com/a/b');
-    check('按钮反馈「已复制 ✓」', copies[0].textContent === '已复制 ✓');
-    s.timers.advance(1200);
-    check('1.2s 后按钮文案还原', copies[0].textContent === '复制');
 
     // 开关类：menu_action 改写 settings → merge → 重渲染
     const toggle = menuPanel.querySelector('[data-act="toggle-close-to-tray"]');
@@ -607,238 +597,22 @@ async function main() {
     check('Escape → 关闭', menuPanel.hidden === true);
   }
 
-  // ---- 3.6 更新行状态机 ----
-  console.log('\n[6] 更新行状态机：检查中 → 可更新 → 下载% → 完成/安装');
-  {
-    const s = bootShim({ appInfo: APP_INFO });
-    await flush();
-    const bar = s.doc.getElementById('dsh-tauri-chrome');
-    const menuBtn = bar.querySelector('button.dch-menu-btn');
-    menuBtn.onclick(); await flush();
-    const menuPanel = s.doc.getElementById('dsh-tauri-menu');
-
-    let checkDefer = null, installDefer = null;
-    s.itn.routes['menu_action'] = (args) => {
-      if (args.action === 'check-client-update') return new Promise((res, rej) => { checkDefer = { res, rej }; });
-      if (args.action === 'install-client-update') return new Promise(res => { installDefer = { res }; });
-      return Promise.resolve({});
-    };
-    s.itn.routes['copy_text'] = () => Promise.resolve();
-
-    // 初始：无状态 → 纯「检查客户端更新…」
-    check('初始无 install 按钮', menuPanel.querySelector('[data-act="install-client-update"]') === null);
-
-    // 检查中…
-    menuPanel.querySelector('[data-act="check-client-update"]').onclick();
-    const stSpan = menuPanel.querySelector('.dch-upd');
-    check('点击后即时「检查中…」（就地回显不关菜单）', stSpan && stSpan.textContent === '检查中…' && menuPanel.hidden === false);
-    await flush(); // deferred 路由在微任务里创建
-
-    // 可更新 v9.9.9（源：Gitee）
-    checkDefer.res({ ok: true, upToDate: false, next: '9.9.9', source: 'gitee' });
-    await flush();
-    check('可更新 v9.9.9（源：Gitee）', menuPanel.textContent.includes('可更新 v9.9.9（源：Gitee）'));
-    check('源归一 gitee→Gitee', menuPanel.textContent.includes('Gitee'));
-    check('install 按钮出现', !!menuPanel.querySelector('[data-act="install-client-update"]'));
-    check('红点打上（dch-dot）', menuBtn.classList.contains('dch-dot'));
-
-    // 点击安装 → downloading 0%
-    menuPanel.querySelector('[data-act="install-client-update"]').onclick();
-    await flush();
-    check('install → menu_action install-client-update', s.last('menu_action').args.action === 'install-client-update');
-    check('下载中 0%', menuPanel.querySelector('.dch-upd-info').textContent === '下载中 0%');
-
-    // 下载进度 25%（received/total 折算，就地改文本）
-    s.emit('client-update-progress', { received: 50, total: 200 });
-    check('下载中 25%（信封解包 + 折算）', menuPanel.querySelector('.dch-upd-info').textContent === '下载中 25%');
-
-    // 100% → 安装中
-    s.emit('client-update-progress', { received: 200, total: 200 });
-    check('100% → 「下载完成，正在安装…」', menuPanel.querySelector('.dch-upd-info').textContent === '下载完成，正在安装…');
-
-    // install resolve {installing:true}
-    installDefer.res({ installing: true, version: '9.9.9' });
-    await flush();
-    check('install installing 态：无 install 按钮', menuPanel.querySelector('[data-act="install-client-update"]') === null);
-
-    // 已是最新 → 红点摘除
-    menuPanel.querySelector('[data-act="check-client-update"]').onclick();
-    await flush();
-    checkDefer.res({ ok: true, upToDate: true });
-    await flush();
-    check('已是最新', menuPanel.textContent.includes('已是最新'));
-    check('红点摘除', !menuBtn.classList.contains('dch-dot'));
-
-    // 检查失败路径
-    menuPanel.querySelector('[data-act="check-client-update"]').onclick();
-    await flush();
-    checkDefer.rej(new Error('[E_UPD] boom'));
-    await flush();
-    check('检查失败：<原因>（去 [CODE] 前缀）', menuPanel.textContent.includes('检查失败：boom'));
-
-    // armed：有会话运行时首点弹显式确认（不再隐晦「再点一次」二次文案）
-    s.storage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'live-session' }));
-    s.timers.advance(3000); // currentSession 轮询 3s
-    menuPanel.querySelector('[data-act="check-client-update"]').onclick();
-    await flush();
-    checkDefer.res({ ok: true, upToDate: false, next: '8.8.8', source: 'github' });
-    await flush();
-    const inst = menuPanel.querySelector('[data-act="install-client-update"]');
-    check('可更新态 install 按钮文案「下载并安装」', inst && inst.textContent === '下载并安装');
-    inst.onclick(); await flush();
-    const confirm = menuPanel.querySelector('.dch-upd-confirm');
-    check('会话运行中首点 → 弹显式确认提示', !!confirm && confirm.textContent.includes('确认继续'));
-    const go = menuPanel.querySelector('[data-act="install-client-update"]');
-    const cancel = menuPanel.querySelector('[data-act="cancel-install-confirm"]');
-    check('确认面板含「继续安装」/「取消」按钮',
-      go && go.textContent === '继续安装' && cancel && cancel.textContent === '取消');
-    const installs = s.calls.filter(c => c.cmd === 'menu_action' && c.args.action === 'install-client-update');
-    check('确认弹窗前不发 install-client-update', installs.length === 1, String(installs.length));
-    cancel.onclick(); await flush();
-    check('取消 → 回到「下载并安装」且不发 install',
-      menuPanel.querySelector('[data-act="install-client-update"]').textContent === '下载并安装'
-      && s.calls.filter(c => c.cmd === 'menu_action' && c.args.action === 'install-client-update').length === 1);
-    menuPanel.querySelector('[data-act="install-client-update"]').onclick(); await flush();
-    check('再点 → 再次弹确认', menuPanel.querySelector('[data-act="install-client-update"]').textContent === '继续安装');
-    menuPanel.querySelector('[data-act="install-client-update"]').onclick(); await flush();
-    const installs2 = s.calls.filter(c => c.cmd === 'menu_action' && c.args.action === 'install-client-update');
-    check('「继续安装」真正触发 install', installs2.length === 2);
-  }
-
-  // ---- 3.7 client-update-available：红点 / 通知 / 自动安装 ----
-  console.log('\n[7] client-update-available：menuState 回填 / 红点 / 自动安装');
-  {
-    const s = bootShim({ appInfo: Object.assign({}, APP_INFO, { autoInstallUpdates: true }) });
-    await flush();
-    const bar = s.doc.getElementById('dsh-tauri-chrome');
-    const menuBtn = bar.querySelector('button.dch-menu-btn');
-    s.emit('client-update-available', { next: '2.0.0', source: 'gitee' });
-    await flush();
-    check('红点打上', menuBtn.classList.contains('dch-dot'));
-    check('系统通知（plugin:notification|notify）', s.count('plugin:notification|notify') === 1);
-    check('autoInstallUpdates+无会话 → 自动安装', s.last('menu_action') && s.last('menu_action').args.action === 'install-client-update');
-    menuBtn.onclick();
-    await flush();
-    const menuPanel = s.doc.getElementById('dsh-tauri-menu');
-    check('打开菜单渲染「可更新 v2.0.0（源：Gitee）」', menuPanel.textContent.includes('可更新 v2.0.0（源：Gitee）'));
-    check('同版本通知去重', (s.emit('client-update-available', { next: '2.0.0' }), s.count('plugin:notification|notify') === 1));
-  }
-  {
-    const s = bootShim({ appInfo: Object.assign({}, APP_INFO, { autoInstallUpdates: true }) });
-    await flush();
-    s.storage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'busy' }));
-    s.timers.advance(3000);
-    s.emit('client-update-available', { next: '2.0.0' });
-    await flush();
-    const installs = s.calls.filter(c => c.cmd === 'menu_action' && c.args.action === 'install-client-update');
-    check('有会话运行 → 只提醒不自动装', installs.length === 0);
-  }
-  {
-    const s = bootShim({ appInfo: APP_INFO, label: 'float' });
-    await flush();
-    s.emit('client-update-available', { next: '2.0.0' });
-    await flush();
-    check('非主窗：无通知/无红点/不自动装',
-      s.count('plugin:notification|notify') === 0
-      && !s.doc.getElementById('dsh-tauri-chrome').querySelector('button.dch-menu-btn').classList.contains('dch-dot'));
-  }
-
-  // ---- 3.7b 页面引导期主动补查（#189 回归）----
-  // 壳的启动检查在 webview 挂上监听之前就广播完了 client-update-available
-  // （updater_client.rs 模块文档已写明该风险），事件不重放 ⇒ 垫片必须在页面
-  // 就绪后主动补查一次，否则红点/通知/自动安装每次启动都落空。
-  console.log('\n[7b] 页面引导期主动补查 check-client-update（#189 回归）');
+  // ---- 3.6 客户端更新链已整体裁撤（行为级反向守卫）----
+  console.log('\n[6] 客户端更新链已整体裁撤（无主动补查 / 无事件监听 / 无红点）');
   {
     const acts = [];
     const s = bootShim({
-      appInfo: Object.assign({}, APP_INFO, { autoInstallUpdates: true }),
-      routes: {
-        menu_action: (args) => {
-          acts.push(args.action);
-          if (args.action === 'check-client-update') return { ok: true, upToDate: true };
-          return undefined;
-        },
-      },
+      appInfo: APP_INFO,
+      routes: { menu_action: (args) => { acts.push(args.action); return {}; } },
     });
     await flush();
-    check('引导后主动补查一次 check-client-update', acts.length === 1 && acts[0] === 'check-client-update', JSON.stringify(acts));
-    const btn = s.doc.getElementById('dsh-tauri-chrome').querySelector('button.dch-menu-btn');
-    check('补查 upToDate → 无红点 / 无通知 / 不安装',
-      !btn.classList.contains('dch-dot') && s.count('plugin:notification|notify') === 0
-      && !acts.includes('install-client-update'));
-    s.timers.advance(60000);
-    await flush();
-    check('补查每页一次（不随定时器重复）', acts.length === 1, JSON.stringify(acts));
-  }
-  {
-    const acts = [];
-    const s = bootShim({
-      appInfo: Object.assign({}, APP_INFO, { autoInstallUpdates: true }),
-      routes: {
-        menu_action: (args) => {
-          acts.push(args.action);
-          if (args.action === 'check-client-update') return { ok: true, next: '9.9.9', source: 'github' };
-          if (args.action === 'install-client-update') return { installing: true };
-          return undefined;
-        },
-      },
-    });
+    s.emit('client-update-available', { next: '9.9.9', source: 'github' });
+    s.emit('client-update-progress', { received: 50, total: 100 });
     await flush();
     const btn = s.doc.getElementById('dsh-tauri-chrome').querySelector('button.dch-menu-btn');
-    check('补查命中 → 红点', btn.classList.contains('dch-dot'));
-    check('补查命中 → 系统通知一次', s.count('plugin:notification|notify') === 1);
-    check('补查命中 + 无会话 → 自动安装（与事件链同闸门）', acts.includes('install-client-update'), JSON.stringify(acts));
-  }
-  {
-    const acts = [];
-    const s = bootShim({
-      appInfo: Object.assign({}, APP_INFO, { autoInstallUpdates: true }),
-      routes: {
-        menu_action: (args) => {
-          acts.push(args.action);
-          if (args.action === 'check-client-update') return { ok: true, next: '9.9.9' };
-          return undefined;
-        },
-      },
-    });
-    s.storage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'busy' }));
-    s.timers.advance(3000); // 3s 轮询读到会话之后再补查
-    await flush();
-    check('有会话 → 补查只提醒不自动装', !acts.includes('install-client-update'), JSON.stringify(acts));
-    check('有会话 → 红点仍打上',
-      s.doc.getElementById('dsh-tauri-chrome').querySelector('button.dch-menu-btn').classList.contains('dch-dot'));
-  }
-  {
-    const acts = [];
-    const s = bootShim({
-      appInfo: APP_INFO,
-      pathname: '/loading.html',
-      routes: { menu_action: (args) => { acts.push(args.action); return { ok: true, next: '9.9.9' }; } },
-    });
-    await flush();
-    check('壳页（loading.html）不补查（跨 origin 会话态不可信）', acts.length === 0, JSON.stringify(acts));
-  }
-  {
-    const acts = [];
-    const s = bootShim({
-      appInfo: APP_INFO,
-      label: 'float',
-      routes: { menu_action: (args) => { acts.push(args.action); return { ok: true, next: '9.9.9' }; } },
-    });
-    await flush();
-    check('非主窗不补查（防浮窗/宠物窗并发安装）', acts.length === 0, JSON.stringify(acts));
-  }
-  {
-    const acts = [];
-    const s = bootShim({
-      appInfo: APP_INFO,
-      routes: { menu_action: (args) => { acts.push(args.action); throw new Error('[UPDATE_CHECK_FAILED] offline'); } },
-    });
-    await flush();
-    check('补查失败静默（不抛异常）', acts.length === 1 && acts[0] === 'check-client-update', JSON.stringify(acts));
-    check('补查失败 → 无红点 / 无通知',
-      !s.doc.getElementById('dsh-tauri-chrome').querySelector('button.dch-menu-btn').classList.contains('dch-dot')
-      && s.count('plugin:notification|notify') === 0);
+    check('引导期不再主动补查 check-client-update', acts.length === 0, JSON.stringify(acts));
+    check('收到旧客户端更新事件不打红点/不发通知',
+      !btn.classList.contains('dch-dot') && s.count('plugin:notification|notify') === 0);
   }
 
   // ---- 3.8 拖放悬停层：整节随 dsh-file-drop 退役删除 ----

@@ -3,16 +3,15 @@
 //! 按领域拆分为子模块，本文件是门面（re-export）：对外（lib.rs 的
 //! `generate_handler` 注册与 crate 内调用方）统一走 `commands::name` 路径，
 //! 拆分不改变任何 IPC 命令签名。分三类：
-//! 1. 壳内实现（窗口/恢复/剪贴板/外部打开/文件围栏/浮窗/赞助）；
+//! 1. 壳内实现（窗口/恢复/剪贴板/外部打开/文件围栏/浮窗）；
 //! 2. sidecar 转发（插件管理六通道 + 诊断备份族——`run_sidecar`）；
-//! 3. 已裁撤（内核更新链——不注册，垫片报错）；
+//! 3. 已裁撤（内核更新链、客户端更新链、赞助窗——不注册，垫片报错）；
 //! 4. guard 交互面（插件保护中心 `guard:action` 分发——读面/轻量解，经 supervisor）。
 //!
 //! 子模块清单：
 //! - [`lifecycle`] —— Phase 1 核心：app_init / 剪贴板 / 外部打开 / 心跳 / 会话 / 重启服务
-//! - [`window`]    —— 窗口族：window_control / 浮窗 / 赞助
-//! - [`menu`]      —— ⋯ 菜单动作分发 + 设置开关 + 客户端更新检查/安装（双源 releases
-//!   链见 [`updater_client`]；npm 内核比对已随 v0.5.3 退役）
+//! - [`window`]    —— 窗口族：window_control / 浮窗
+//! - [`menu`]      —— ⋯ 菜单动作分发 + 设置开关
 //! - [`recovery`]  —— 恢复页四件套
 //! - [`sidecar`]   —— sidecar 转发族：插件管理六通道 + 诊断 / 备份
 //! - [`file`]      —— 文件域：file_open（fence 围栏）
@@ -31,7 +30,6 @@ mod recovery;
 mod sidecar;
 mod window;
 mod wsl;
-pub mod updater_client;
 /// ACP 托管族：不注册 bridge command（托盘菜单直调），路径引用即可。
 pub mod acp;
 

@@ -128,7 +128,7 @@ test('getSpecsByCli：返回 25 个 cli:true 补丁（8 runtime + 3 数据完整
   // − atomic-write-orphan-lock − model-image-input（两条 rc.2 退役，均 cli:true）；
   // guard 组仍为 false，只在桌面壳运行时应用（image-send 一族
   // 曾属此类，2026-10 随识图插件整体退役，不影响本计数）。
-  assert.equal(specs.length, 25, 'cli 清单应恰为 25 项');
+  assert.equal(specs.length, 26, 'cli 清单应恰为 26 项');
   const expected = new Set([
     'slot-legacy-key', 'slot-unkeyed-compat', 'slot-error-isolation',
     'runtime-flash-fix', 'shell-description-compat',
@@ -147,6 +147,7 @@ test('getSpecsByCli：返回 25 个 cli:true 补丁（8 runtime + 3 数据完整
     'pi-ai-tool-name-wire',
     'pi-ai-quota-not-retryable',
     'ds-tool-schema-sanitize',
+    'ds-empty-thinking-strip',
     'appboot-bootstrap-singleton',
   ]);
   assert.deepEqual(new Set(specs.map((s) => s.id)), expected, 'cli 清单 id 集合不符');
@@ -186,6 +187,7 @@ test('getSpecsByCli：每个 spec 的 transform/apply 与 patch-adapters 导出�
     'pi-ai-tool-name-wire': adapters.transformPiAiToolNameWire,
     'pi-ai-quota-not-retryable': adapters.transformPiAiQuotaNotRetryable,
     'ds-tool-schema-sanitize': adapters.transformDsToolSchemaSanitize,
+    'ds-empty-thinking-strip': adapters.transformDsEmptyThinkingStrip,
     'appboot-bootstrap-singleton': adapters.transformAppBootBootstrapSingleton,
   };
   const rootApplyMap = {

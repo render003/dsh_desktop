@@ -9,13 +9,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::AppState;
 
 use super::common::{main_window_only, open_http_url, NoWindow};
-use super::menu::{setting_bool, setting_bool_or};
-
-/// 更新源仓库（Electron client-updater DEFAULT_REPOS 同源；⋯ 菜单「更新源」展示+复制）。
-pub const REPO_URLS: (&str, &str) = (
-    "https://github.com/myYangyunfan/dsh_desktop",
-    "https://gitee.com/my-yang-yunfan/dsh_desktop",
-);
+use super::menu::setting_bool;
 
 #[tauri::command]
 pub fn app_init(app: AppHandle) -> Result<serde_json::Value, BridgeError> {
@@ -28,11 +22,10 @@ pub fn app_init(app: AppHandle) -> Result<serde_json::Value, BridgeError> {
         }
     };
     // ⋯ 菜单面板状态（对齐 Electron chrome:init 的消费字段）：agent 版本/来源、
-    // 持久化开关现值（settings.json）、更新源 URL——bridge-shim 的菜单
-    // openMenu 经 getInfo 拉取渲染。notifyOnTurnEnd 已随壳层回合完成通知
-    // 下线移除（2026-10-22；通知改由内置插件 dsh-notify 发送）。
-    // （showBalanceDock 已随 toggle-balance 菜单项退役，2026-10-16：开关迁到
-    // dsh-balance 插件导出的 Config 设置条目，壳侧不再有消费方。）
+    // 持久化开关现值（settings.json）——bridge-shim 的菜单 openMenu 经 getInfo
+    // 拉取渲染。notifyOnTurnEnd 已随壳层回合完成通知下线移除（2026-10-22）；
+    // showBalanceDock 已随 toggle-balance 菜单项退役（2026-10-16）；
+    // autoInstallUpdates / repoUrls 已随客户端更新链整体裁撤移除（2026-11-22）。
     let store = shell_core::SettingsStore::new(state.paths.settings.clone());
     Ok(serde_json::json!({
         "appVersion": env!("CARGO_PKG_VERSION"),
@@ -43,10 +36,6 @@ pub fn app_init(app: AppHandle) -> Result<serde_json::Value, BridgeError> {
         "agentVersion": kernel_version,
         "agentSource": "bundled", // Tauri 版内核随客户端分发（Electron 的「内置」对应物）
         "closeToTray": setting_bool(&store, "closeToTray"),
-        // 自动装更新缺省 false（menu.rs key_default 同源；client-update-available
-        // 事件命中时垫片据此决定是否直接走 install 流程）。
-        "autoInstallUpdates": setting_bool_or(&store, "autoInstallUpdates", false),
-        "repoUrls": { "github": REPO_URLS.0, "gitee": REPO_URLS.1 },
     }))
 }
 

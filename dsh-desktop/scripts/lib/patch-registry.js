@@ -116,6 +116,7 @@ const {
   DSH_LLM_PIAI_PKG_REL,
   DS_LLM_DEEPSEEK_PKG_REL,
   SKILL_FS_PKG_REL,
+  UI_SIDEBAR_CLIENT_PKG_REL,
 } = require('./patch-target-resolver');
 
 const {
@@ -129,6 +130,7 @@ const {
   transformJournalPrependContinuity,
   transformChatAutoLoadOlder,
   transformReasoningRowCollapseWidth,
+  transformSidebarFooterLayout,
   transformSessionUnknownEventTolerance,
   transformReleasedV0KeysTolerance,
   transformConversationAssemblyResilience,
@@ -165,6 +167,7 @@ const {
   transformPiAiToolNameWire,
   transformPiAiQuotaNotRetryable,
   transformDsToolSchemaSanitize,
+  transformDsEmptyThinkingStrip,
   transformSkillDirsCompat,
   // 选择工作文件夹时 chip/输入框闪回「选择工作区」（workspace 投影缺口帧）。
   transformWorkspaceChipLabelHold,
@@ -206,6 +209,7 @@ const {
   PI_AI_4XX_DUMP_MARKER,
   PI_AI_TOOL_SCHEMA_SANITIZE_MARKER,
   DS_TOOL_SCHEMA_SANITIZE_MARKER,
+  DS_EMPTY_THINKING_STRIP_MARKER,
   PI_AI_RESPONSES_TOOL_NAME_SANITIZE_MARKER,
   PI_AI_TOOL_NAME_WIRE_MARKER,
   PI_AI_QUOTA_NOT_RETRYABLE_MARKER,
@@ -215,6 +219,7 @@ const {
   JOURNAL_PREPEND_MARKER,
   CHAT_AUTOLOAD_MARKER,
   REASONING_ROW_COLLAPSE_MARKER,
+  SIDEBAR_FOOTER_LAYOUT_MARKER,
   SESSION_UNKNOWN_EVENT_TOLERANCE_MARKER,
   RELEASED_V0_HISTORY_MARKER,
   ASSEMBLY_RESILIENCE_MARKER,
@@ -1478,6 +1483,35 @@ const PATCH_SPECS = [
   },
 
   // -------------------------------------------------------------------------
+  // dsh-llm-deepseek 空思考标签拦截补丁（ds-empty-thinking-strip）：
+  // deepseek-v4.1-flash 等模型在连续工具调用中偶发把空 `<thinking> </thinking>`
+  // （或 `<think> </think>`）泄入 `type === "text"` 普通正文块；DSH 原样透传后
+  // 会打断前端工具折叠，并在回放中触发长会话上下文自激复读。
+  // 双端治理：入站 `translate()` 前缀流式剔除纯空思考标签块并保持 `replayState`
+  // 索引 1:1 对齐；出站 `assistant()` 历史回放同步剥离已落盘的空标签块。cli:true。
+  // -------------------------------------------------------------------------
+  {
+    id: 'ds-empty-thinking-strip',
+    group: 'runtime',
+    order: 342,
+    kind: 'file',
+    layout: 'runtime-local',
+    wslLayout: 'wsl',
+    pkgRel: DS_LLM_DEEPSEEK_PKG_REL,
+    transform: transformDsEmptyThinkingStrip,
+    marker: DS_EMPTY_THINKING_STRIP_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: true,
+    logs: {
+      prefix: 'ds 空思考标签拦截补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已注入 ds 适配器空 <thinking> 入站流过滤与出站回放清理到 ' + file,
+      failLog: (file, err) => 'ds 空思考标签拦截补丁失败(' + file + '): ' + err.message,
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // pi-ai 工具 schema+函数名净化补丁（pi-ai-tool-schema-sanitize）：DeepSeek/
   // LiteLLM 系路由严格校验：①属性级 required:true/false（JSON Schema 非法位置，
   // 工具工厂批量生成 schema 的插件普遍携带）②函数名含 . 等非法字符（OpenAI 规范
@@ -1950,6 +1984,32 @@ const PATCH_SPECS = [
       alreadyLog: alreadySkip,
       doneLog: (file) => '已将 bootstrapIncludes 提升为 globalThis 单例（修 profile reload 取不到根 Include 导致的设置写入全线失败） ' + file,
       failLog: (file, err) => 'app-boot 模块单例化补丁失败(' + file + '): ' + err.message,
+    },
+  },
+  // -------------------------------------------------------------------------
+  // 左侧栏底部动作区纵向堆叠布局修复（sidebar-footer-layout）：
+  // dsh-client-ui-sidebar 的 `.hHd-Xa_footerActions` 仅写 `display:flex`（横向），
+  // 多个插件挂入 `sidebar.footer.action` 时互相挤压重叠；改为纵向堆叠 + gap +
+  // 折叠态 safe center 对齐。cli:false（与 reasoning-row-collapse-width 同族）。
+  // -------------------------------------------------------------------------
+  {
+    id: 'sidebar-footer-layout',
+    group: 'runtime',
+    order: 404,
+    kind: 'file',
+    layout: 'runtime-local',
+    wslLayout: 'wsl',
+    pkgRel: UI_SIDEBAR_CLIENT_PKG_REL,
+    transform: transformSidebarFooterLayout,
+    marker: SIDEBAR_FOOTER_LAYOUT_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: false,
+    logs: {
+      prefix: '侧栏底部布局补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已将左侧栏底部 footerActions 改为纵向堆叠与安全居中对齐 ' + file,
+      failLog: (file, err) => '侧栏底部布局补丁失败(' + file + '): ' + err.message,
     },
   },
 ];

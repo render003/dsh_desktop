@@ -131,7 +131,6 @@ DSH Pack 把这件事做完：**精选，整合，随包交付。**
 | `@deepseek-ai/dsh-prompt-custom` | 0.5.0 | 在设置页自定义官方注入的系统提示词（整体替换 / 追加），提示词卡即切即用：点芯片切换、正文写回当前卡 | 自研 · MIT |
 | `@deepseek-ai/dsh-workspace-anchor` | 0.1.1 | 把当前工作目录写进稳定系统提示的锚点块，防 agent 工作目录漂移（0.2.1 起内核不再注册 `{{cwd}}` 变量，锚点由插件自己填实路径） | 自研 · MIT |
 | `@deepseek-ai/dsh-wsl-settings` | 0.1.0 | 设置页「WSL 后端」栏：local↔wsl 切换、发行版与安装目录、状态探活 | 自研 · MIT |
-| `ds-bot` | 0.2.0 | Bot 团队：主 Bot + 长期 Bot + 群聊，Bot 间 @ 转交与共享记忆，开箱即用的协作工作台（loader id `bot`） | [Fei2411/DeepSeek-Bot](https://github.com/Fei2411/DeepSeek-Bot) · Apache-2.0 |
 | `billion-context` | 0.1.213 | 上下文压缩（上游统一版）：模型驱动压缩 + 4 个模型工具与 /acp-prune 命令，另带 preset 级 compaction gate | [ranxianglei/billion-context](https://github.com/ranxianglei/billion-context) · MIT |
 | `dsh-pocket` | 2.13.1 | 手机扫码实时同屏操控桌面 web（WebSocket 透传 + 公网隧道 + 二维码配对） | [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) · GPL-2.0 |
 | `@deepseek-ai/dsh-openclaw-bridge` | 0.8.1 | 微信 / 飞书官方频道桥接入 DSH agent 会话（分片回写、去重限流） | [hzhz314159/openclaw-dsh-bridge](https://github.com/hzhz314159/openclaw-dsh-bridge) · MIT |

@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-18T16:46:45.223Z",
+  "generatedAt": "2026-11-22T08:48:43.324Z",
   "kernelRoot": "@deepseek-ai",
-  "markerCount": 87,
+  "markerCount": 89,
   "surface": [
     {
       "file": "cordis-plugin-loader/lib/index.js",
@@ -201,6 +201,13 @@
       ]
     },
     {
+      "file": "dsh-client-ui-sidebar/lib/client.js",
+      "sha256": "fcd47812db0c8d97",
+      "markers": [
+        "sidebar footer vertical stack layout"
+      ]
+    },
+    {
       "file": "dsh-client-ui-slots/lib/index.js",
       "sha256": "224e6cf2ef2fce11",
       "markers": [
@@ -325,9 +332,10 @@
     },
     {
       "file": "dsh-llm-deepseek/lib/index.js",
-      "sha256": "bfe9bf9e1e7b134a",
+      "sha256": "970ef6301d53d2c3",
       "markers": [
         "device-auth guidance",
+        "ds empty thinking strip",
         "ds tool schema sanitize"
       ]
     },

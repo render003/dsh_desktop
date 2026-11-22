@@ -27,8 +27,7 @@ const UPDATE_SOURCES = Object.freeze({
   // better-sidebar 条目保留但被排除，原因见 UPDATE_EXCLUSIONS。
   'better-sidebar': { kind: 'npm', pkg: 'dsh-better-sidebar' },
 
-  // ── 2026-10-22 新增的随包插件 ──
-  'bot': { kind: 'npm', pkg: 'ds-bot' },
+  // ── 2026-10-22 新增的随包插件（bot/ds-bot 已于 2026-11-22 退役移除） ──
   'web-search-free': { kind: 'npm', pkg: 'dsh-free-search' },
   'shop': { kind: 'npm', pkg: 'dsh-plugin-shop' },
   // 该仓库的 Release 没有上传资产（只有 tag_name / tarball_url / zipball_url），
@@ -49,10 +48,6 @@ const UPDATE_SOURCES = Object.freeze({
  */
 const UPDATE_EXCLUSIONS = Object.freeze({
   'better-sidebar': '本地重建件（vendored 上游 + 本仓修复），npm 更新会覆盖本地修复，故不纳入独立更新管理',
-  // ds-bot 是 vendored 定制：上游 patch 会接管 web.searchProvider，本仓只保留 Bot 本体
-  // （与 dsh-free-search 共存）；npm 更新会整包覆盖 cordis.patch.yml 与 client 里的
-  // dsh-compat 标记，故升级需人工重放 vendored 改动，不交给自动更新。
-  bot: '本地 vendored patch（只挂 Bot 本体、不接管 web.searchProvider）；npm 更新会覆盖定制，升级需人工重放',
 });
 
 /** 该 loader id 是否被排除在更新管理之外。 */

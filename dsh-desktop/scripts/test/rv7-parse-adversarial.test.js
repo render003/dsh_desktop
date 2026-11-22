@@ -140,17 +140,17 @@ test('rv7 shim: escHtml 对 XSS payload 全转义（fuzz）', () => {
 
 test('rv7 shim: menuPanel.innerHTML 模板的全部动态插值必须经 escHtml（源审计）', () => {
   // renderMenu 的 innerHTML 模板串：提取后逐插值检查。动态值 = s.appVersion /
-  // s.agentVersion / s.agentSource / repos.* / updRowHtml()（其内部 label 也经 escHtml）。
+  // s.agentVersion / s.agentSource（原 repos.* 与 updRowHtml 已随客户端更新链裁撤）。
   const seg = SHIM.slice(SHIM.indexOf('menuPanel.innerHTML'), SHIM.indexOf("var items = menuPanel.querySelectorAll"));
   assert.ok(seg.length > 200, '必须截到 renderMenu 模板段');
   // 模板内所有 "+ expr +" 插值。
   const interp = seg.match(/\+ ([^+;]+?) \+/g) || [];
-  assert.ok(interp.length >= 6, '模板应含多个动态插值，实测 ' + interp.length);
+  assert.ok(interp.length >= 3, '模板应含多个动态插值，实测 ' + interp.length);
   for (const raw of interp) {
     const expr = raw.replace(/^\+ /, '').replace(/ \+$/, '');
     // 允许：escHtml(...) 包裹、纯静态 HTML 片段（引号字符串）、已审计函数调用。
     if (/^escHtml\(/.test(expr)) continue;
-    if (/^(menuItemHtml|updRowHtml)\(/.test(expr)) continue;
+    if (/^menuItemHtml\(/.test(expr)) continue;
     if (/^'[^']*'$/s.test(expr)) continue; // 静态片段
     assert.fail('innerHTML 模板存在未转义插值: ' + expr);
   }

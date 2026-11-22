@@ -2574,6 +2574,7 @@ const { transformPiAiToolNameWire, MARKER: PI_AI_TOOL_NAME_WIRE_MARKER } = requi
 // 同为 429 却是终态 → 白等若干轮退避。判定顺序：x-should-retry 头优先，其后配额特征。
 const { transformPiAiQuotaNotRetryable, MARKER: PI_AI_QUOTA_NOT_RETRYABLE_MARKER } = require('../patch-pi-ai-quota-not-retryable');
 const { transformDsToolSchemaSanitize, MARKER: DS_TOOL_SCHEMA_SANITIZE_MARKER } = require('../patch-ds-tool-schema-sanitize');
+const { transformDsEmptyThinkingStrip, MARKER: DS_EMPTY_THINKING_STRIP_MARKER } = require('../patch-ds-empty-thinking-strip');
 
 // ---------------------------------------------------------------------------
 // 跨版本 session 日志未知事件类型兜底（0.6.3 第二案；用户降级/换装后老对话
@@ -2624,6 +2625,25 @@ function transformReasoningRowCollapseWidth(src, file) {
   return { status: 'changed', src: src.replace(REASONING_ROW_COLLAPSE_FROM, REASONING_ROW_COLLAPSE_TO) };
 }
 
+// ---------------------------------------------------------------------------
+// 左侧栏底部动作区纵向堆叠布局修复（sidebar-footer-layout）：
+// dsh-client-ui-sidebar 的 `.hHd-Xa_footerActions` 仅写了 `display:flex`（默认横向），
+// 当多个插件同时挂入 `sidebar.footer.action`（如 ds-harness-remote + dsh-toolbox-ui）时，
+// 各行按钮会被横向挤在同一行内导致文字/图标重叠。改为纵向 flex-direction:column + gap +
+// 子项 min-inline-size:0，并在折叠窄轨态用 safe center 居中堆叠。
+// ---------------------------------------------------------------------------
+const SIDEBAR_FOOTER_LAYOUT_MARKER = 'dsh-desktop fix: sidebar footer vertical stack layout';
+const SIDEBAR_FOOTER_LAYOUT_FROM = '.hHd-Xa_footArea{flex-direction:column;flex:none;display:flex}.hHd-Xa_settingsArea,.hHd-Xa_footerActions{flex:none;width:100%;min-width:0}.hHd-Xa_footerActions{display:flex}.hHd-Xa_collapsed .hHd-Xa_footArea{align-items:center}.hHd-Xa_collapsed .hHd-Xa_settingsArea,.hHd-Xa_collapsed .hHd-Xa_footerActions{justify-content:center;width:auto;display:flex}';
+const SIDEBAR_FOOTER_LAYOUT_TO = '.hHd-Xa_footArea{flex-direction:column;gap:2px;flex:none;display:flex}/* dsh-desktop fix: sidebar footer vertical stack layout */.hHd-Xa_settingsArea,.hHd-Xa_footerActions{flex:none;inline-size:100%;min-inline-size:0}.hHd-Xa_footerActions{display:flex;flex-direction:column;align-items:stretch;gap:2px}.hHd-Xa_footerActions>*{min-inline-size:0}.hHd-Xa_collapsed .hHd-Xa_footArea{align-items:safe center;gap:4px}.hHd-Xa_collapsed .hHd-Xa_settingsArea,.hHd-Xa_collapsed .hHd-Xa_footerActions{flex-direction:column;align-items:safe center;justify-content:center;gap:4px;inline-size:auto;display:flex}';
+
+function transformSidebarFooterLayout(src, file) {
+  if (src.includes(SIDEBAR_FOOTER_LAYOUT_MARKER)) return { status: 'already' };
+  if (!src.includes(SIDEBAR_FOOTER_LAYOUT_FROM)) {
+    return { status: 'anchor-missing', detail: '侧栏底部布局锚点未匹配（dsh 版本可能已变化），跳过 ' + file };
+  }
+  return { status: 'changed', src: src.replace(SIDEBAR_FOOTER_LAYOUT_FROM, SIDEBAR_FOOTER_LAYOUT_TO) };
+}
+
 module.exports = {
   // runtime-patches 的 transform（re-export）。其中 transformPersistenceAll 不被
   // registry 直接引用，其消费方是 rootAppliers.patchSessionPersistence
@@ -2641,6 +2661,8 @@ module.exports = {
   transformPiAiQuotaNotRetryable,
   DS_TOOL_SCHEMA_SANITIZE_MARKER,
   transformDsToolSchemaSanitize,
+  DS_EMPTY_THINKING_STRIP_MARKER,
+  transformDsEmptyThinkingStrip,
   transformFlashFix,
   transformPersistenceAll,
   transformReleasedV0KeysTolerance,
@@ -2654,6 +2676,7 @@ module.exports = {
   transformChatAutoLoadOlder,
   transformConversationAssemblyResilience,
   transformReasoningRowCollapseWidth,
+  transformSidebarFooterLayout,
   transformSessionUnknownEventTolerance,
   transformProfilePatchGuard,
   transformProfileBundleAppBoot,
@@ -2730,6 +2753,7 @@ module.exports = {
   // 来自 loader-isolation，其余为本文档声明化。
   markers: {
   DS_TOOL_SCHEMA_SANITIZE_MARKER,
+  DS_EMPTY_THINKING_STRIP_MARKER,
   PI_AI_TOOL_SCHEMA_SANITIZE_MARKER,
   PI_AI_RESPONSES_TOOL_NAME_SANITIZE_MARKER,
   PI_AI_TOOL_NAME_WIRE_MARKER,
@@ -2770,6 +2794,7 @@ module.exports = {
     CHAT_AUTOLOAD_MARKER,
     ASSEMBLY_RESILIENCE_MARKER,
     REASONING_ROW_COLLAPSE_MARKER,
+    SIDEBAR_FOOTER_LAYOUT_MARKER,
     SESSION_UNKNOWN_EVENT_TOLERANCE_MARKER,
     ...require('./loader-isolation').markers,
     ...require('./onboarding-resilience').markers,

@@ -59,24 +59,16 @@ function read(p) { return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n'); }
   check('turn-end 不再挂余额触发（C2 退役）', !notify.includes('trigger_fetch'));
 }
 
-// ---- 3. updater：client 复用 / 进度事件 / 启动一次性 ----
+// ---- 3. updater：客户端自更新链已于 2026-11-22 整体裁撤（反向守卫）----
 {
-  const src = read(path.join(DSH_TAURI, 'src-tauri/src/app/src/commands/updater_client.rs'));
-  check('meta/dl client OnceLock 复用（每启动仅建一次）', src.includes('static CLIENT: OnceLock<reqwest::Client>') && (src.match(/OnceLock<reqwest::Client>/g) || []).length === 2);
+  check(
+    '客户端更新引擎模块已删除',
+    !fs.existsSync(path.join(DSH_TAURI, 'src-tauri/src/app/src/commands/updater_client.rs')),
+  );
   const lib = read(path.join(DSH_TAURI, 'src-tauri/src/app/src/lib.rs'));
-  // v0.6.3 起 dsh-tauri lib.rs 把「启动一次性查一次」升级为「有界周期重检」
-  //（见 lib.rs:500 注释：常年挂机用户当天也要被新版本敲门）。rv9 冒烟守的是「热路径
-  // 无重启/紧循环风暴」这一不变量，判据随之升级：loop 存在合法，但必须
-  //   (a) 保留 loop 前的 15s 首查延迟（避免启动打点即出网），
-  //   (b) loop 内 check_latest 之后有 thread::sleep 分隔（若日后误改成裸紧循环，
-  //       (b) 直接失配、本项重新变红）。
-  const hasInitialDelay = /std::thread::sleep\(std::time::Duration::from_secs\(15\)\)[\s\S]{0,400}?loop \{/.test(lib);
-  const loopSleepsBetweenChecks = /loop \{[\s\S]{0,2000}?check_latest[\s\S]{0,1500}?std::thread::sleep\(std::time::Duration::from_secs\(\d+\)\)/.test(lib);
-  check('启动 15s 首查 + v0.6.3 有界周期重检（loop 内 sleep 分隔、非紧循环风暴）',
-    hasInitialDelay && loopSleepsBetweenChecks,
-    `hasInitialDelay=${hasInitialDelay}, loopSleepsBetweenChecks=${loopSleepsBetweenChecks}`);
+  check('lib.rs 不再起客户端更新后台轮询线程', !lib.includes('updater_client') && !lib.includes('client-update-available'));
   const menu = read(path.join(DSH_TAURI, 'src-tauri/src/app/src/commands/menu.rs'));
-  check('进度事件经 download 回调发出（无独立轮询线程）', menu.includes('"client-update-progress"') && menu.includes('download_to_temp(&asset, move |received'));
+  check('menu.rs 不再含客户端更新检查/下载进度事件', !menu.includes('"client-update-progress"') && !menu.includes('download_to_temp'));
 }
 
 // ---- 4. 浮窗看门狗 FW1：单发 setTimeout（非常驻 interval）+ reload 一次封顶 ----

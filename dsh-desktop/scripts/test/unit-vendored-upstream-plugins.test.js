@@ -143,29 +143,13 @@ test('模块表：五个新件的宿主入口都能被解析（防入口写错�
   assert.ok(ctx, '模块表上下文必须可构造');
 });
 
-test('ds-bot：Bot 团队内置件的包/loader/许可与 vendored patch 边界', () => {
+test('ds-bot：已退役移除，登记在 RETIRED_COMPANIONS 且源目录不再存在', () => {
   const dir = 'ds-bot';
   const companions = require('../lib/companion-plugins');
-  const entry = companions.COMPANION_PLUGINS.find((p) => p.id === 'bot');
-  assert.ok(entry, 'COMPANION_PLUGINS 缺 bot（DeepSeek-Bot）');
-  assert.equal(entry.name, 'ds-bot');
-  const pkg = readJson(path.join(PLUGINS, dir, 'package.json'));
-  assert.equal(pkg.name, 'ds-bot');
-  assert.equal(pkg.version, '0.2.0');
-  assert.equal(pkg.license, 'Apache-2.0');
-  assert.ok(fs.existsSync(path.join(PLUGINS, dir, 'LICENSE')), '缺 Apache-2.0 LICENSE');
-  assert.equal(loaderIdOf(dir), 'bot', 'bundle loader id 必须是 bot');
-  assert.ok(fs.existsSync(path.join(PLUGINS, dir, 'client.js')), '缺客户端产物 client.js');
-
-  // vendored patch 的边界：只挂 Bot 本体，不接管 web.searchProvider。
-  // 上游 patch 同时插入 web-search-auto 并整行覆盖 web 配置；随包与 dsh-free-search
-  // 共存时，两套 provider 会静默互相覆盖（详见 patch 顶部注释）。
-  const patch = fs.readFileSync(path.join(PLUGINS, dir, 'cordis.patch.yml'), 'utf8');
-  const yaml = patch.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
-  assert.match(yaml, /^\s*-\s*id:\s*bot\s*$/m);
-  assert.ok(!/web-search-auto/.test(yaml), '不得重新插入 web-search-auto');
-  assert.ok(!/searchProvider\s*:\s*auto/.test(yaml), '不得覆盖 web.searchProvider');
-  assert.ok(!/^\s*-\s*id:\s*web\s*$/m.test(yaml), '不得整行覆盖 web 配置');
+  assert.equal(companions.COMPANION_PLUGINS.find((p) => p.id === 'bot'), undefined, 'COMPANION_PLUGINS 不应再含 bot');
+  const retired = companions.RETIRED_COMPANIONS.find((p) => p.id === 'bot' && p.name === 'ds-bot');
+  assert.ok(retired, 'RETIRED_COMPANIONS 应登记 bot/ds-bot 以回收存量 profile');
+  assert.equal(fs.existsSync(path.join(PLUGINS, dir)), false, 'assets/plugins/ds-bot 源目录应已删除');
 });
 
 test('反证：把清单里 shop 的 id 改成包名后，bundle loader id 判据必须转红', () => {

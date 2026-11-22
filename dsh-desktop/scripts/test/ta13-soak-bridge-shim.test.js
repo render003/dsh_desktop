@@ -21,14 +21,11 @@ const EVENT_STORM = 10000;
 const MENU_ROUNDS = 1000;
 const HEAP_SLOPE_LIMIT_MB = 40;
 
-// 垫片实际注册的事件面（contracts/bridge-api.md §3）。pet-state 已随 harness-pet
-// 于 2026-10 退役，balance-changed 同日随 Electron 余额遗留线整体退役
-//（contracts/ipc-commands.md §2.4），风暴喂的就是这 4 类，与 onEvent 注册数逐一对应。
+// 垫片实际注册的事件面（contracts/bridge-api.md §3）。pet-state / balance-changed
+// / client-update-available / client-update-progress 均已退役，当前风暴喂 2 类。
 const STORM_EVENTS = [
   'window-maximized',
   'notification-jump',
-  'client-update-available',
-  'client-update-progress',
 ];
 
 // ---------------------------------------------------------------------------
@@ -129,7 +126,7 @@ function loadShim() {
       }
       // menu_state / get_info 等：给最小成功体
       if (cmd === 'get_info' || cmd === 'menu_state') {
-        return Promise.resolve({ appVersion: '0.0.0-ta13', agentVersion: 'x', agentSource: 'bundled', repoUrls: { github: '', gitee: '' } });
+        return Promise.resolve({ appVersion: '0.0.0-ta13', agentVersion: 'x', agentSource: 'bundled', closeToTray: true });
       }
       return Promise.resolve();
     },
@@ -167,7 +164,7 @@ test('bridge 垫片 soak：事件风暴 1e4 + 菜单开/关 1000 轮，DOM 节�
   const { sandbox, doc, byId, eventHandlers } = loadShim();
   const dsh = sandbox.window.dshDesktop;
   assert.ok(dsh && typeof dsh.getInfo === 'function' && typeof dsh.menu.action === 'function', '垫片应挂 window.dshDesktop');
-  assert.strictEqual(eventHandlers.length, 4, '应注册 4 类事件 handler（实际 ' + eventHandlers.length + '）');
+  assert.strictEqual(eventHandlers.length, 2, '应注册 2 类事件 handler（实际 ' + eventHandlers.length + '）');
 
   // 控制条应已注入（脚本装载期 injectChromeBar）
   const bar = byId.get('dsh-tauri-bar') || doc.body.children.find((c) => c.attrs && c.attrs.id === 'dsh-tauri-bar') || null;

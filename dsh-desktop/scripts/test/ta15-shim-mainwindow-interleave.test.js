@@ -46,9 +46,8 @@ function extractIsMainWindow() {
 function extractJumpRegistration() {
   const src = fs.readFileSync(SHIM, 'utf8');
   const start = src.indexOf("onEvent('notification-jump'");
-  // 尾锚点：balance-changed 注册段已随 Electron 余额遗留线退役（contracts/
-  // ipc-commands.md §2.4），改锚下一段 client-update-available。
-  const end = src.indexOf("onEvent('client-update-available'");
+  // 尾锚点：client-update-available 已于 2026-11-22 裁撤，改锚紧随其后的 pendingJump 段。
+  const end = src.indexOf('// ---- 通知跳转补发');
   assert.ok(start >= 0 && end > start, 'notification-jump 注册段必须存在');
   return src.slice(start, end);
 }

@@ -33,10 +33,57 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# 本机 gnu 线的产物在仓库外的 CARGO_TARGET_DIR 且三元组不同，硬编码 msvc 路径
-# 会「缺 release exe」直接退出——留 TARGET_DIR 覆盖通道（与 SMOKE_DIR 同风格），
-# 默认仍是 CI 的 msvc 布局。
-TARGET_DIR="${TARGET_DIR:-$REPO_ROOT/dsh-tauri/src-tauri/target/x86_64-pc-windows-msvc/release}"
+# 通过 cargo metadata 获取实际 target_directory（兼容用户级共享目录与 CI 默认布局），
+# 并自动匹配目标平台三元组与 profile 子目录；仍保留 TARGET_DIR / TARGET_TRIPLE / PROFILE 覆盖通道。
+resolve_cargo_target_root() {
+  local manifest="$REPO_ROOT/dsh-tauri/src-tauri/Cargo.toml"
+  local manifest_arg="$manifest"
+  if command -v cygpath >/dev/null 2>&1; then
+    manifest_arg="$(cygpath -w "$manifest")"
+  fi
+  local raw=""
+  if command -v cargo >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    raw="$(cargo metadata --manifest-path "$manifest_arg" --format-version 1 --no-deps 2>/dev/null \
+      | node -e "const fs = require('fs'); try { const d = JSON.parse(fs.readFileSync(0, 'utf8')); if (d && d.target_directory) process.stdout.write(d.target_directory); } catch {}" 2>/dev/null || true)"
+  fi
+  if [ -n "$raw" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      cygpath -u "$raw"
+    else
+      printf '%s' "$raw"
+    fi
+  else
+    printf '%s' "$REPO_ROOT/dsh-tauri/src-tauri/target"
+  fi
+}
+
+resolve_target_dir() {
+  local target_root="$1"
+  local profile="${PROFILE:-release}"
+  local triple="${TARGET_TRIPLE:-${CARGO_BUILD_TARGET:-}}"
+  if [ -n "$triple" ]; then
+    printf '%s' "$target_root/$triple/$profile"
+    return
+  fi
+  local cand
+  for cand in \
+    "$target_root/x86_64-pc-windows-msvc/$profile" \
+    "$target_root/x86_64-pc-windows-gnu/$profile" \
+    "$target_root/aarch64-pc-windows-msvc/$profile" \
+    "$target_root/$profile"
+  do
+    if [ -f "$cand/dsh-tauri-app.exe" ]; then
+      printf '%s' "$cand"
+      return
+    fi
+  done
+  printf '%s' "$target_root/x86_64-pc-windows-msvc/$profile"
+}
+
+if [ -z "${TARGET_DIR:-}" ]; then
+  CARGO_TARGET_ROOT="$(resolve_cargo_target_root)"
+  TARGET_DIR="$(resolve_target_dir "$CARGO_TARGET_ROOT")"
+fi
 EXE="$TARGET_DIR/dsh-tauri-app.exe"
 SMOKE="${SMOKE_DIR:-/tmp/dsh-tauri-smoke}"
 

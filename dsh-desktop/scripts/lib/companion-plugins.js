@@ -59,12 +59,6 @@ const COMPANION_PLUGINS = [
   { id: 'prompt-custom', name: '@deepseek-ai/dsh-prompt-custom' },
   { id: 'workspace-anchor', name: '@deepseek-ai/dsh-workspace-anchor' },
   { id: 'wsl-settings', name: '@deepseek-ai/dsh-wsl-settings' },
-  // Bot 团队（Fei2411/DeepSeek-Bot，Apache-2.0）：把 DSH 变成主 Bot + 长期 Bot +
-  // 群聊的协作客户端；loader id 是 bundle 层 cordis.patch.yml 的 `bot`。
-  // 上游 patch 还会注册 web-search-auto 并把 web.searchProvider 改成 auto；作为
-  // 随包内置件与 dsh-free-search 的运行时接管冲突，故 vendored patch 只保留 bot
-  // 本体（见 assets/plugins/ds-bot/cordis.patch.yml 顶部注释）。
-  { id: 'bot', name: 'ds-bot' },
   // 上下文压缩（ranxianglei/billion-context，MIT，5422★）：2026-11-09 按用户要求从已停止
   // 维护的 billion-context-dsh 0.2.27 整体换成上游统一版 0.1.213。两处与上游发行包的差异写在
   // inventory §5.2 #11：① 只留 DSH 半边（dist/agent/dsh-native.js + dsh-compaction-gate.js +
@@ -292,6 +286,9 @@ const RETIRED_COMPANIONS = [
   // compaction-basic，等于「开了只多四个工具、自动压缩还是 basic」。撤账同时清掉 profile 里
   // 由旧件默认禁用逻辑写入的 compaction-acp 禁用行。
   { id: 'compaction-acp', name: 'billion-context-dsh' },
+  // 2026-11-22 按用户要求移除 DS Bot（ds-bot，loader id `bot`）：摘出清单、删除
+  // assets/plugins/ds-bot 源目录，并在存量 profile 同步期自动撤回 patch 行与目录。
+  { id: 'bot', name: 'ds-bot' },
 ];
 
 /** 退役登记表 → assets/plugins 目录名（去 scope 前缀），供过期清理认领。 */

@@ -89,9 +89,9 @@ function parseRustActs() {
   return acts;
 }
 
-test('TA7-1a bridge-api.md §2.3 act 表 → menu.rs：单向差集为空（含 toggle 展开共 13 项）', () => {
+test('TA7-1a bridge-api.md §2.3 act 表 → menu.rs：单向差集为空（共 9 项）', () => {
   const md = parseMdActs();
-  assert.strictEqual(md.size, 13, `契约 act 计数（toggle 展开）: ${[...md]}`);
+  assert.strictEqual(md.size, 9, `契约 act 计数（移除 about/toggle-auto-update/check-client-update/install-client-update 后为 9）: ${[...md]}`);
   const missing = diff(md, parseRustActs());
   assert.deepStrictEqual(missing, [], '契约有而实装缺的 act');
 });
@@ -156,7 +156,7 @@ test('TA7-1c act 返回 payload 字段：md「返回」列字面量 ↔ menu.rs 
 });
 
 test('TA7-1d toggle 合并行语义键：settings 键在 menu.rs 有映射与返回', () => {
-  for (const key of ['closeToTray', 'autoInstallUpdates']) {
+  for (const key of ['closeToTray']) {
     assert.ok(menuRs.includes(`"${key}"`), `settings 键 ${key} 缺失（toggle_key 映射或返回）`);
   }
   // toggle-notify / notifyOnTurnEnd 2026-10-22 随壳层回合完成通知下线：act 摘出
@@ -168,6 +168,9 @@ test('TA7-1d toggle 合并行语义键：settings 键在 menu.rs 有映射与返
   // 按「登记形态」判：menu.rs 自身的退役说明与 None 断言是散文，不算登记。
   assert.ok(!/"toggle-balance"\s*(?:\||=>)/.test(menuRs), 'toggle-balance act 已退役（不得再登记 match 臂）');
   assert.ok(!menuRs.includes('showBalanceDock'), 'showBalanceDock 键已退役（menu.rs 不得残留）');
+  // toggle-auto-update / autoInstallUpdates 2026-11-22 随客户端自更新链裁撤。
+  assert.ok(!/"toggle-auto-update"\s*(?:\||=>)/.test(menuRs), 'toggle-auto-update act 已裁撤（不得再登记 match 臂）');
+  assert.ok(!menuRs.includes('autoInstallUpdates'), 'autoInstallUpdates 键已裁撤（menu.rs 不得残留）');
 });
 
 // ----------------------------------------------------------------------------
@@ -269,10 +272,9 @@ function parseRegisteredCommands() {
 
 test('TA7-3a ipc-commands.md §2 → generate_handler：契约命令全注册', () => {
   const md = parseMdCommands();
-  // 39 = crates/bridge/src/commands.rs CHANNELS 的 invoke+send 总数
-  // （2026-10 拆 Electron 余额遗留线移出 balance_refresh；2026-11-10 增
-  // recovery_safe_mode = 1.0.9 保底进入通道）。
-  assert.strictEqual(md.size, 39, `契约命令计数: ${md.size}`);
+  // 37 = crates/bridge/src/commands.rs CHANNELS 的 invoke+send 总数
+  // （2026-11-22 裁撤 sponsor_window / sponsor_qr 后由 39 降至 37）。
+  assert.strictEqual(md.size, 37, `契约命令计数: ${md.size}`);
   const reg = parseRegisteredCommands();
   const missing = [...md].filter((c) => !reg.has(c));
   assert.deepStrictEqual(missing, [], '契约有而未注册的 command');
@@ -440,11 +442,10 @@ function parseShimSurfaces() {
   return surfaces;
 }
 
-test('TA7-7a bridge-api.md 方法表（47）→ 垫片挂载：差集为空', () => {
+test('TA7-7a bridge-api.md 方法表（45）→ 垫片挂载：差集为空', () => {
   const md = parseMdMethodSurfaces();
-  // 47 = shim.rs REQUIRED_SURFACES.len()（2026-10 拆余额遗留线移出 refreshBalance；
-  // 2026-11-10 增 recovery.safeMode = 1.0.9 保底进入通道）。
-  assert.strictEqual(md.size, 47, `契约方法计数: ${md.size}`);
+  // 45 = shim.rs REQUIRED_SURFACES.len()（2026-11-22 裁撤 sponsorQr / sponsorWindow 后由 47 降至 45）。
+  assert.strictEqual(md.size, 45, `契约方法计数: ${md.size}`);
   const missing = diff(md, parseShimSurfaces());
   assert.deepStrictEqual(missing, [], '契约有而垫片缺的方法/字段');
 });

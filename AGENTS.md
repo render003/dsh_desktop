@@ -44,9 +44,18 @@ cd dsh-tauri && npx --yes @tauri-apps/cli build \
 bash dsh-tauri/scripts/smoke-installed.sh            # ③ 安装布局冒烟
 ```
 
-**本机**：`cargo` 目标目录在仓库外（`CARGO_TARGET_DIR=C:\dsh-tauri-build`，TEMP 指仓库内
-`.tmp-rust-tmp`，实测 ~18G）；成品安装包收集在 `C:\Users\delinger\Desktop\dsh-tauri-out`
-（`.sha256` 同目录，`superseded/` 存历史包）。
+### 本机 Windows Rust 构建缓存约定
+
+本机 Windows 环境的 Rust 构建统一使用共享目录：`E:/build-cache/cargo-target`。
+
+1. **沿用用户级 Cargo 配置**：默认沿用用户级 Cargo 配置（`~/.cargo/config.toml` 的 `[build] target-dir`），不为本项目另外建立独立的 `target` 缓存目录。
+2. **构建前防覆盖检查**：执行 Cargo 或 Tauri 构建前，先检查项目配置（如 `.cargo/config.toml`）、环境变量及命令参数，避免 `CARGO_TARGET_DIR`、`build.target-dir` 或 `--target-dir` 将输出改到其他位置。
+3. **以 `cargo metadata` 为准**：使用 `cargo metadata --manifest-path dsh-tauri/src-tauri/Cargo.toml --format-version 1 --no-deps` 获取实际的 `target_directory`，确认其指向 `E:/build-cache/cargo-target`。
+4. **脚本动态查找产物**：构建、打包、冒烟与复制脚本均应从实际的 `target_directory` 查找产物，并正确处理目标平台三元组（如 `x86_64-pc-windows-msvc` / `x86_64-pc-windows-gnu` / `aarch64-pc-windows-msvc`）和 profile（如 `release` / `debug`）子目录，不得写死项目内 `target/...` 路径。
+5. **严禁破坏共享缓存**：共享目录包含其他项目的产物。未经明确要求，不执行完整 `cargo clean`，不删除整个共享目录，也不清理其他项目的缓存。
+6. **适用范围**：本约定只适用于这台 Windows 主机；WSL、容器、远程环境和 CI 使用各自适用的路径。
+
+> 注（上游历史环境记录，仅作参考，本机请遵循上方共享目录约定）：上游维护者原机曾使用 `CARGO_TARGET_DIR=C:\dsh-tauri-build`、TEMP 指仓库内 `.tmp-rust-tmp`（实测 ~18G），成品安装包收集在 `C:\Users\delinger\Desktop\dsh-tauri-out`（`.sha256` 同目录，`superseded/` 存历史包）。本机 Windows 切勿套用该 `CARGO_TARGET_DIR`。
 
 **没有 lint / typecheck / 格式化工具链**（无 eslint、无 tsconfig、无 prettier）——
 语法门禁只有 `check-syntax.js` 与测试，没有可用的 lint 脚本，不要凭空发明。
@@ -362,8 +371,8 @@ bash dsh-tauri/scripts/smoke-installed.sh            # ③ 安装布局冒烟
   **「配对」是硬要求，只给 `--target` 不够（2026-10-10 实测）**：本机 default host 是
   `stable-x86_64-pc-windows-msvc`，`--target …-gnu` 时 **build script 仍在 msvc host 上链接**，
   于是 `link.exe` 解析到 Git Bash 的 coreutils `link`，报 `link: extra operand '…rcgu.o'`
-  ——看着像依赖坏了。正确姿势：
-  `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu CARGO_TARGET_DIR=C:/dsh-tauri-build cargo test -p <crate> --target x86_64-pc-windows-gnu …`。
+  ——看着像依赖坏了。正确姿势（沿用用户级 `target-dir`，勿在本机额外设置 `CARGO_TARGET_DIR` 覆盖）：
+  `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu cargo test -p <crate> --target x86_64-pc-windows-gnu …`（上游历史示例曾带 `CARGO_TARGET_DIR=C:/dsh-tauri-build`，本机勿用）。
   取退出码别接管道：`cargo test … > 日志 2>&1; echo exit=$?`（`| tail` 会把 `$?` 换成 tail 的 0，
   本次就是这么错过一次编译失败的）。
   `dsh-tauri/docs/development.md` 那组「177 Rust 例 / 71 文件 Node」是旧账——**一律以实测输出为准**。

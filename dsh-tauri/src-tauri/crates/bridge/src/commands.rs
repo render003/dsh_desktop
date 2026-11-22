@@ -35,9 +35,7 @@ pub const CHANNELS: &[ChannelMapping] = &[
     m("chrome:menu", "menu_action", false, false),
     m("chrome:restart-service", "restart_service", false, false),
     m("chrome:float-window", "float_window", false, false),
-    m("chrome:sponsor-window", "sponsor_window", false, false),
     m("dsh:copy-text", "copy_text", false, false),
-    m("dsh:sponsor-qr", "sponsor_qr", false, false),
     m("dsh:open-external", "open_external", false, false),
     m("dsh:renderer-heartbeat", "renderer_heartbeat", true, false),
     m("dsh:page-error", "page_error", true, false),
@@ -101,7 +99,7 @@ mod tests {
     /// 伴随插件裁撤移出，`dsh:balance-refresh` 同月随 Electron 余额线退役移出。
     #[test]
     fn channel_count_matches_contract() {
-        assert_eq!(CHANNELS.len(), 39, "通道总数必须与契约文档一致");
+        assert_eq!(CHANNELS.len(), 37, "通道总数必须与契约文档一致（移除 sponsor_window / sponsor_qr 后为 37）");
         assert_eq!(CHANNELS.iter().filter(|c| c.cut).count(), 0, "无裁撤通道（guard:action 已迁移）");
         assert_eq!(
             CHANNELS.iter().filter(|c| c.fire_and_forget).count(),

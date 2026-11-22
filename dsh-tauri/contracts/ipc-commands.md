@@ -37,9 +37,7 @@
 | `chrome:menu` (2953) | `menu_action` | app commands/menu |
 | `chrome:restart-service` (2986) | `restart_service` | app commands/lifecycle（supervisor 执行重启；spawn/杀树域在 kernel-process crate） |
 | `chrome:float-window` (3050) | `float_window` | app commands/window |
-| `chrome:sponsor-window` (3155) | `sponsor_window` | app commands/window |
 | `dsh:copy-text` (3141) | `copy_text` | app commands/lifecycle |
-| `dsh:sponsor-qr` (3149) | `sponsor_qr` | app commands/window |
 | `dsh:open-external` (3254) | `open_external` | app commands/lifecycle |
 | `dsh:page-error`（on, 3162） | `page_error` | app commands/lifecycle |
 | `dsh:renderer-heartbeat`（on, 2896） | `renderer_heartbeat` | app commands/lifecycle |
@@ -87,6 +85,7 @@
 | `dsh:image-paste-save`（invoke） | 2026-10 随 dsh-image-paste 内置插件退役：剪贴板位图落 `%TEMP%/dsh-paste/` 的通道与对应命令移除，粘贴图走内核输入区自带的图片附件面。 |
 | `dsh:file-revert`（invoke） | 2026-10 随 dsh-client-file-changes 内置插件退役（官方 `@deepseek-ai/dsh-file-changes` 已在册，重复装配面）：按变更逆向还原的命令与 fence 围栏判定入口移除，`dsh:file-open` 等其余围栏通道不受影响。 |
 | `dsh:balance-refresh`（invoke）+ 事件 `dsh:balance` / `balance-changed` | 2026-10 拆 Electron 余额遗留线：页面余额的现役唯一链路是内置插件 `dsh-balance`（宿主半边在内核 webServer 注册 `GET /api/dsh-balance/state` + `POST /api/dsh-balance/refresh` 两条只认回环的 exact 路由，页面 60s 轮询），壳侧「Rust 轮询环 → sidecar `balance-fetch` → `app.emit("balance-changed")` → 垫片转发的页面事件」整条链**零消费方**却每 180s 真发一次 `/user/balance`，故命令、事件、轮询环与 `dsh-desktop/balance.js` / `balance-scheduler.js` 一并裁撤。通道号 3173 与命令名不复用。**后续追记（2026-10-16）**：`menu_action` 的 `toggle-balance`（设置项 `showBalanceDock`）亦已退役——它写的是壳侧 settings.json，与 `dsh-balance` 插件读的内核设置条目（profile 条目 id balance 的 config 块）互不相通，自设置子系统迁移到内核 SettingsForms 起就是个死开关（点了没反应、也不报错）；dock 显隐开关的唯一落点已迁至插件导出的 Config 设置条目（内核设置页自动表单，showBalanceDock / showOpenCodeGoUsage 两条 volatile 布尔）。菜单项、app_init 的返回键与 menu.rs 的 toggle_key 映射同批摘除，通道号与命令名不复用；插件设置页不在裁撤范围。 |
+| 客户端更新链（`check-client-update` / `install-client-update` / `toggle-auto-update` / `updater_client.rs` / 进度弹窗）+ 赞助通道（`chrome:sponsor-window` / `dsh:sponsor-qr`）+ `about` 菜单动作 | 2026-11-22 整体裁撤：移除客户端自更新检查/下载/自动安装、更新源展示、请作者喝咖啡赞助窗与二维码资产及「关于 DSH Pack」菜单项与对应代码，通道号与命令名不复用。 |
 
 ## 3. command 通用约定
 

@@ -32,8 +32,6 @@ const REQUIRED_SURFACES: &[&str] = &[
     "openExternal",
     "copyText",
     "getPathForFile",
-    "sponsorQr",
-    "sponsorWindow",
     "floatWindow.open",
     "floatWindow.close",
     "pluginManager.list",
@@ -94,19 +92,24 @@ mod tests {
     fn all_surfaces_present() {
         let missing: Vec<&str> = REQUIRED_SURFACES.iter().copied().filter(|s| !defines(s)).collect();
         assert!(missing.is_empty(), "垫片缺失契约方法: {missing:?}");
-        assert_eq!(REQUIRED_SURFACES.len(), 47, "契约方法计数（42 + guard 4 面 + 1.0.9 安全模式）");
+        assert_eq!(REQUIRED_SURFACES.len(), 45, "契约方法计数（移除 sponsorQr/sponsorWindow 后为 45）");
     }
 
-    /// check-agent-update 退役锚点（v0.5.3）：npm 内核更新链整体退役
-    /// （内核随客户端分发，无 overlay 更新链）——菜单动作与垫片引用不得
-    /// 残留；更新项统一走 check-client-update（updater_client 双源链）。
-    /// E_CUT_FEATURE 不应出现在垫片（guard:action 已迁移为 guard 命名空间
-    /// 的读面/轻量解，写动作仍走守护瀑布自动面，无垫片侧裁撤守卫）。
     #[test]
     fn agent_update_menu_action_retired() {
-        assert!(!BRIDGE_SHIM_JS.contains("check-agent-update"), "check-agent-update 菜单动作已退役，不得残留");
-        assert!(BRIDGE_SHIM_JS.contains("check-client-update"), "更新项必须切换到 check-client-update");
-        assert!(!BRIDGE_SHIM_JS.contains("E_CUT_FEATURE"), "垫片不应有裁撤守卫残留");
+        for gone in [
+            "check-agent-update",
+            "check-client-update",
+            "install-client-update",
+            "toggle-auto-update",
+            "sponsorWindow",
+            "sponsorQr",
+            "请作者喝咖啡",
+            "关于 DSH Pack",
+            "E_CUT_FEATURE",
+        ] {
+            assert!(!BRIDGE_SHIM_JS.contains(gone), "已裁撤功能不得残留于垫片: {gone}");
+        }
     }
 
     #[test]
@@ -114,10 +117,8 @@ mod tests {
         for ev in ["window-maximized", "notification-jump"] {
             assert!(BRIDGE_SHIM_JS.contains(ev), "事件 {ev} 缺失");
         }
-        // 客户端更新链（v0.5.3）：available = 启动自动检查命中（红点/通知/
-        // 自动安装）；progress = 下载进度（菜单行尾就地百分比）。
         for ev in ["client-update-available", "client-update-progress"] {
-            assert!(BRIDGE_SHIM_JS.contains(ev), "客户端更新事件 {ev} 缺失");
+            assert!(!BRIDGE_SHIM_JS.contains(ev), "客户端更新事件已裁撤，不得残留: {ev}");
         }
         // 余额遗留线退役反证（contracts/ipc-commands.md §2.4）：垫片既不再监听
         // Tauri 事件 balance-changed，也不再向页面派发 dsh-balance-changed
@@ -253,11 +254,7 @@ mod window_chrome_tests {
             BRIDGE_SHIM_JS.contains("!document.getElementById(BALL_ID)"),
             "幂等/自愈检查必须兼容悬浮钮形态"
         );
-        // 红点与点击外关闭必须兼容两种形态（否则悬浮钮形态红点丢失/菜单打不开）。
-        assert!(
-            BRIDGE_SHIM_JS.contains("btn = document.getElementById(BALL_ID)"),
-            "红点兼容悬浮钮形态"
-        );
+        // 点击外关闭必须兼容两种形态（否则悬浮钮形态点钮会误关菜单）。
         assert!(
             BRIDGE_SHIM_JS.contains("document.getElementById(CHROME_ID) || document.getElementById(BALL_ID)"),
             "点击外关闭兼容悬浮钮形态（点钮不得关菜单）"
@@ -354,83 +351,56 @@ mod window_chrome_tests {
     #[test]
     fn window_chrome_dots_menu_items() {
         for marker in [
-            "dch-menu-btn",                            // ⋯ 按钮（30x28 同款）
-            "cx: '2.4'",                               // 实心三点图形（Electron GLYPHS.menu 同款）
-            "MENU_ID",                                 // 菜单面板 id
-            "menuItemHtml('check-client-update'",      // 唯一更新项「检查客户端更新…」
-            "检查客户端更新",
-            "下载并安装",                                // 可更新态的安装按钮
-            "更新源（点行内「复制」拷贝地址）",
+            "dch-menu-btn",
+            "cx: '2.4'",
+            "MENU_ID",
             "menuItemHtml('toggle-close-to-tray'",
-            "menuItemHtml('toggle-auto-update'",       // 自动安装客户端更新开关
-            "自动安装客户端更新",
+            "menuItemHtml('set-custom-icon'",
+            "menuItemHtml('reset-custom-icon'",
             "menuItemHtml('reload'",
             "menuItemHtml('devtools'",
             "menuItemHtml('fullscreen'",
             "menuItemHtml('open-browser'",
             "menuItemHtml('open-logs'",
-            "menuItemHtml('sponsor'",
-            "☕ 请作者喝咖啡",
-            "sponsorWindow()",                         // sponsor 走赞助窗通道
-            "menuItemHtml('about'",
-            "关于 DSH Pack",
             "menuItemHtml('quit'",
-            "' data-act=\"' + act",                    // 菜单项统一带 data-act（事件路由键）
-            "menu_action",                             // 动作统一经 menu_action 桥
+            "' data-act=\"' + act",
+            "menu_action",
         ] {
             assert!(BRIDGE_SHIM_JS.contains(marker), "⋯ 菜单缺 {marker}");
         }
-        // 退役锚点（全文级）：npm 内核检查项与其文案不得以任何形态回潮。
-        assert!(!BRIDGE_SHIM_JS.contains("检查 dsh 更新"), "「检查 dsh 更新」已退役（内核随客户端分发）");
-        // 退役锚点（2026-10-16）：toggle-balance 与它的文案不得以任何形态回潮
-        // （开关唯一落点是 dsh-balance 的插件设置条目，见 contracts/ipc-commands.md §2.4）。
-        assert!(!BRIDGE_SHIM_JS.contains("toggle-balance"), "toggle-balance 已退役（开关迁到插件设置条目）");
-        assert!(!BRIDGE_SHIM_JS.contains("显示余额"), "「显示余额/本轮费用」菜单文案不得回潮");
-        // 渲染段（updRowHtml + renderMenu 函数体）必须含客户端更新项。
-        let menu_seg = BRIDGE_SHIM_JS
-            .split("function updRowHtml()")
-            .nth(1)
-            .and_then(|s| s.split("function closeMenu()").next())
-            .expect("菜单渲染函数段（updRowHtml→closeMenu）");
-        assert!(menu_seg.contains("check-client-update"), "更新项必须进菜单渲染");
-        assert!(menu_seg.contains("检查客户端更新"), "同上（中文文案）");
-        assert!(!menu_seg.contains("check-agent-update"), "退役动作不得进渲染段");
+        for gone in [
+            "检查 dsh 更新",
+            "检查客户端更新",
+            "更新源（点行内「复制」拷贝地址）",
+            "自动安装客户端更新",
+            "toggle-auto-update",
+            "toggle-balance",
+            "显示余额",
+            "请作者喝咖啡",
+            "关于 DSH Pack",
+            "menuItemHtml('sponsor'",
+            "menuItemHtml('about'",
+        ] {
+            assert!(!BRIDGE_SHIM_JS.contains(gone), "已裁撤菜单项不得回潮: {gone}");
+        }
     }
 
-    /// ⋯ 菜单交互契约：点击外部 / Escape 关闭；开关类 toggle 后重渲染（菜单
-    /// 保持打开）；客户端更新检查就地回显（检查中…/可更新 vX/已是最新/
-    /// 检查失败）+ 下载进度百分比 + 有会话时的显式确认提示 + 启动自动检查
-    /// 命中的红点/系统通知/自动安装；自愈重注不重复挂 document 监听。
     #[test]
     fn window_chrome_dots_menu_interaction() {
         for marker in [
-            "'Escape'",                     // Escape 关闭
-            "bar.contains(e.target)",       // 点击面板外关闭（面板在条内）
-            "installMenuHooks",             // document 监听一次性安装
-            "menuHooksInstalled",           // 防自愈重注重复累积
-            "renderMenu()",                 // toggle 成功后重渲染（菜单不关）
-            "检查中…",                      // 客户端更新检查就地反馈
-            "已是最新",
-            "可更新 v",
-            "检查失败",
-            "下载中 ",                       // 进度百分比（client-update-progress 驱动）
-            "下载完成，正在安装…",
-            "继续安装",                       // 有会话运行时安装的显式确认（[继续安装]/[取消]）
-            "取消",
-            "确认继续",
-            "markUpdateDot",                // ⋯ 按钮红点（client-update-available）
-            "dch-dot",
-            "plugin:notification|notify",   // 系统通知走壳内既有通知插件 IPC
-            "handleClientUpdateAvailable",  // 事件消费入口（红点/通知/自动安装）
-            "autoInstallUpdates",           // 自动安装开关（app_init 回填）
+            "'Escape'",
+            "bar.contains(e.target)",
+            "installMenuHooks",
+            "menuHooksInstalled",
+            "renderMenu()",
+            "plugin:notification|notify",
         ] {
             assert!(BRIDGE_SHIM_JS.contains(marker), "菜单交互缺 {marker}");
         }
-        // 开关类点击不得关菜单（Electron 同语义：toggle 后留在菜单里看新状态）。
         let toggle_seg = BRIDGE_SHIM_JS
             .split("if (act === 'toggle-close-to-tray'")
             .nth(1)
-            .and_then(|s| s.split("if (act === 'check-client-update'").next())
+            .and_then(|s| s.split("if (act === 'set-custom-icon'").next())
             .expect("toggle 分支");
         assert!(!toggle_seg.contains("closeMenu()"), "toggle 分支应留在菜单重渲染: {toggle_seg}");
     }
@@ -467,48 +437,6 @@ mod window_chrome_tests {
             inject_seg.contains("maxGlyphUnsub = dshDesktop.windowControls.onMaximizeChange(setMaxGlyph)"),
             "新订阅的退订器必须落回 maxGlyphUnsub"
         );
-    }
-}
-
-/// T2 UI 修复：⋯ 菜单「更新源」复制按钮——中文「复制」/「已复制 ✓」不得
-/// 溢出按钮框（用户实测：按钮太小、字跑出框外）。复制按钮须有独立
-/// .dch-copy 类（不复用单字符快捷键徽章 .dch-kbd），且 CSS 必须带
-/// nowrap + fit-content 兜底；含中文的安装按钮 .dch-install 同守卫。
-#[cfg(test)]
-mod menu_copy_button_tests {
-    use super::BRIDGE_SHIM_JS;
-
-    #[test]
-    fn copy_button_has_dedicated_class_with_overflow_guards() {
-        // 独立类存在且被渲染段使用（GitHub/Gitee 两行各一个）。
-        assert!(BRIDGE_SHIM_JS.contains(".dch-copy{"), "复制按钮须有独立 .dch-copy 样式类");
-        assert_eq!(
-            BRIDGE_SHIM_JS.matches("button class=\"dch-copy\"").count(),
-            2,
-            "更新源两行（github/gitee）各一个复制按钮"
-        );
-        // .dch-copy 规则段内的溢出守卫。
-        let copy_css = BRIDGE_SHIM_JS
-            .split(".dch-copy{")
-            .nth(1)
-            .and_then(|s| s.split(".dch-copy:hover").next())
-            .expect(".dch-copy CSS 规则段");
-        for guard in ["white-space:nowrap", "min-width:fit-content", "box-sizing:border-box"] {
-            assert!(copy_css.contains(guard), ".dch-copy 缺溢出守卫 {guard}");
-        }
-    }
-
-    #[test]
-    fn chinese_text_badges_have_nowrap_guards() {
-        // 安装按钮（「下载并安装」）：同样不得换行/溢出。
-        let install_css = BRIDGE_SHIM_JS
-            .split(".dch-install{")
-            .nth(1)
-            .and_then(|s| s.split(".dch-install:hover").next())
-            .expect(".dch-install CSS 规则段");
-        for guard in ["white-space:nowrap", "min-width:fit-content"] {
-            assert!(install_css.contains(guard), ".dch-install 缺溢出守卫 {guard}");
-        }
     }
 }
 

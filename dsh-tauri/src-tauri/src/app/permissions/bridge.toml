@@ -24,7 +24,6 @@ commands.allow = [
   "recovery_restart",
   "recovery_open_logs",
   "recovery_safe_mode",
-  "sponsor_window",
   "float_window",
   "float_close",
 ]
@@ -61,5 +60,4 @@ commands.allow = [
   "wsl_config_get",
   "wsl_config_save",
   "wsl_recheck",
-  "sponsor_qr",
 ]

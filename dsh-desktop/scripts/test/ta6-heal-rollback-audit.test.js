@@ -79,6 +79,7 @@ const INVERSE_PAIR_HINTS = {
   // ② 双站点（helper 追加 + 调用点替换），三常量齐备才算覆盖。
   'onboarding-step-progress-timeout': ['STEP_GATE_OLD', 'STEP_GATE_NEW'],
   'onboarding-guard-report': ['GUARD_HELPER_ANCHOR', 'GUARD_CALLS_OLD', 'GUARD_CALLS_NEW'],
+  'sidebar-footer-layout': ['SIDEBAR_FOOTER_LAYOUT_FROM', 'SIDEBAR_FOOTER_LAYOUT_TO'],
 };
 
 const MULTI_SITE = new Set([
@@ -94,6 +95,7 @@ const MULTI_SITE = new Set([
   'onboarding-guard-report',    // 双站点：controller 生命周期前追加 helper + update/complete 调用点替换
   'pi-ai-responses-tool-name-sanitize', // 六点注入：出站 grammar/function 分支 + 回放两处 + 入站两处槽位
   'pi-ai-tool-name-wire', // 三点注入：toolsOf 出站洗名 + 回程两处 case "tool-call" 还原
+  'ds-empty-thinking-strip', // 多点注入：helper + assistant 回放清理 + translate 入站流过滤与 replayState 对齐
 ]);
 
 const fileSpecs = PATCH_SPECS.filter((s) => s.kind === 'file');
@@ -147,8 +149,12 @@ const EXPECTED_NON_VENDORED = [
 // 47 = 45 ＋ onboarding-step-progress-timeout ＋ onboarding-guard-report
 // （2026-10-14 首启引导两条）：靶 dsh-client-ui-settings-account/lib/client.js
 // 同样在离线闭包内，两条都带 FROM/TO 常量对，回滚 = npm ci 即 pristine。
-test('审计 1：分类覆盖全部 48 个 file transform（无回滚盲区）', () => {
-  assert.equal(fileSpecs.length, 48);
+// 49 = 48 ＋ ds-empty-thinking-strip（2026-11-22，custom 分支新增）：靶 dsh-llm-deepseek/lib/index.js
+// 在离线闭包内，带 marker，回滚 = npm ci 即 pristine。
+// 50 = 49 ＋ sidebar-footer-layout（2026-11-22，custom 分支新增）：靶 dsh-client-ui-sidebar/lib/client.js
+// 在离线闭包内，带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
+test('审计 1：分类覆盖全部 50 个 file transform（无回滚盲区）', () => {
+  assert.equal(fileSpecs.length, 50);
   const report = [];
   for (const spec of fileSpecs) {
     const pair = INVERSE_PAIR_HINTS[spec.id];

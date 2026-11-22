@@ -61,7 +61,7 @@
   function send(cmd, args) { call(cmd, args).catch(function () { /* fire-and-forget：失败只静默 */ }); }
 
   // ---- 事件（主进程 → 页面）----
-  var listeners = { maximize: [], jump: [], clientUpdate: [], updProgress: [] };
+  var listeners = { maximize: [], jump: [] };
   function onEvent(name, queue, map) {
     if (!INVOKE || !TRANSFORM) return;
     try {
@@ -93,11 +93,6 @@
     var id = p && typeof p.sessionId === 'string' ? p.sessionId.trim() : '';
     return id && id.length <= 256 ? Object.freeze({ sessionId: id }) : null;
   });
-  // 客户端更新链（v0.5.3）：available = 启动自动检查命中（红点 badge +
-  // 一次系统通知 + autoInstallUpdates 时的自动安装）；progress = 下载进度
-  //（菜单行尾就地显示百分比，避免整面板重渲染抖动）。
-  onEvent('client-update-available', listeners.clientUpdate, function (p) { return p || {}; });
-  onEvent('client-update-progress', listeners.updProgress, function (p) { return p || {}; });
 
   // ---- 通知跳转补发（订阅前收到的最后一次保留）----
   var pendingJump = null;
@@ -163,9 +158,7 @@
       }
     },
     menu: {
-      // ⋯ 菜单动作分发（v0.5.3 起更新项统一为 check-client-update /
-      // install-client-update——壳侧 updater_client 双源 GitHub/Gitee 链，
-      // 就地回显结果；npm 内核检查动作已随「内核随客户端分发」的设计退役）。
+      // ⋯ 菜单动作分发（经 menu_action 桥）。
       action: function (action, payload) {
         return call('menu_action', { action: action, payload: payload || {} });
       }
@@ -203,8 +196,6 @@
     getPathForFile: function (file) {
       try { return (file && typeof file.path === 'string') ? file.path : ''; } catch (e) { return ''; }
     },
-    sponsorQr: function () { return call('sponsor_qr'); },
-    sponsorWindow: function () { return call('sponsor_window'); },
     floatWindow: {
       open: function (sessionId) { return call('float_window', { action: 'open', sessionId: sessionId }); },
       close: function () { send('float_close'); } // 同步语义（契约 §6）
@@ -368,21 +359,12 @@
     } catch (e2) { /* 同上 */ }
   }
 
-  // ---- ⋯ 菜单（Electron preload renderMenu 的复刻）-----------------------
-  // 结构（相对 Electron，v0.5.3 更新项改造）：「检查客户端更新…」为唯一
-  // 更新项（壳侧 updater_client 双源 GitHub/Gitee Releases 链；原「检查
-  // dsh 更新…」npm 内核链退役——内核随客户端整体分发）。交互照就地回显
-  // 模式：点击→检查中…→「可更新 vX.Y.Z（源：Gitee/GitHub）[下载并安装]」
-  // 或「已是最新」或「检查失败：<原因>」；下载中行尾显示百分比
-  // （client-update-progress 事件驱动）；安装前有会话运行时弹显式确认
-  // 「确认继续？[继续安装]/[取消]」防误中断（原生 confirm 被 polyfill 恒
-  // true，不可用）。
-  // 开关类 toggle-* 经 menu_action 持久化到 settings.json 后重渲染；
-  // sponsor 走 sponsorWindow；其余项点击后关菜单再发动作。点击面板外 /
-  // Escape 关闭。
+  // ---- ⋯ 菜单 -----------------------------------------------------------
+  // 开关类 toggle-close-to-tray 经 menu_action 持久化到 settings.json 后重渲染；
+  // 其余项点击后关菜单再发动作。点击面板外 / Escape 关闭。
   var menuPanel = null; // 当前菜单面板（控制条子元素，自愈重注后回到关闭态）
   var menuOpen = false;
-  var menuState = { appVersion: '', agentVersion: '', agentSource: '', closeToTray: true, autoInstallUpdates: false, clientUpdate: null, repoUrls: null };
+  var menuState = { appVersion: '', agentVersion: '', agentSource: '', closeToTray: true };
   function escHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -391,13 +373,6 @@
   function menuItemHtml(act, label, right, danger) {
     return '<button class="dch-item"' + (danger ? ' data-danger="1"' : '') + ' data-act="' + act + '">' +
       '<span>' + escHtml(label) + '</span>' + (right || '') + '</button>';
-  }
-  // 更新源标签归一（壳侧 source 为 'github'/'gitee'，展示形 Gitee/GitHub）。
-  function normSource(src) {
-    var s = String(src || '').toLowerCase();
-    if (s === 'gitee') return 'Gitee';
-    if (s === 'github') return 'GitHub';
-    return s;
   }
   // 系统通知（壳内既有的 tauri-plugin-notification IPC 通道——lib.rs 已注册
   // 插件、capabilities 放行 notifications:default；失败静默：通知是增强，
@@ -410,8 +385,7 @@
       }).catch(function () { /* 权限拒绝/无宿主：静默 */ });
     } catch (e) { /* 同上 */ }
   }
-  // 主窗判定（client-update-available 广播到所有窗，红点/通知/自动安装只
-  // 归主窗，防浮窗重复通知与并发安装）。
+  // 主窗判定（notification-jump 仅归主窗）。
   function isMainWindow() {
     try {
       if (window.__DSH_FLOAT__) return false;
@@ -420,189 +394,16 @@
       return !label || label === 'main'; // metadata 缺席的旧壳兜底放行
     } catch (e) { return true; }
   }
-  // ⋯ 按钮红点（发现新版本未处理时；自愈重注后按 updateDotOn 重打）。
-  // 两种形态兼容：全宽条（Windows）查条内的 dch-menu-btn；悬浮钮
-  // （mac/linux）钮本体即按钮。幂等：两种形态互斥（同一窗口只存在其一），
-  // 找到即打/摘，两处都找不到静默。
-  var updateDotOn = false;
-  function markUpdateDot(on) {
-    updateDotOn = !!on;
-    try {
-      var bar = document.getElementById(CHROME_ID);
-      var btn = bar && bar.querySelector('button.dch-menu-btn');
-      if (!btn) btn = document.getElementById(BALL_ID);
-      if (btn) { if (updateDotOn) btn.classList.add('dch-dot'); else btn.classList.remove('dch-dot'); }
-    } catch (e) {}
-  }
-  /// 客户端更新检查的就地回显行（状态机全在 menuState.clientUpdate）：
-  /// null=未查 | {next,sourceLabel}=可更新(+安装按钮) | {uptodate}=已是最新 |
-  /// {downloading,pct}=下载中 | {installing}=安装中(Windows 进程即将退出) |
-  /// {done:'manual'|'replaced'}=mac/linux 降级形态 | {error,errorKind}=失败 |
-  /// {armed}=有会话运行时的显式确认态。
-  function updRowHtml() {
-    var cu = menuState.clientUpdate;
-    if (!cu) {
-      return menuItemHtml('check-client-update', '检查客户端更新…', '<span class="dch-kbd dch-upd"></span>');
-    }
-    if (cu.error) {
-      return menuItemHtml('check-client-update', '检查客户端更新…',
-        '<span class="dch-upd-info dch-upd-err">' + escHtml((cu.errorKind === 'install' ? '更新失败：' : '检查失败：') + cu.error) + '</span>');
-    }
-    var label;
-    if (cu.downloading) {
-      label = (cu.pct >= 100 || cu.installing) ? '下载完成，正在安装…' : ('下载中 ' + (cu.pct || 0) + '%');
-    } else if (cu.installing) {
-      label = '下载完成，正在安装…';
-    } else if (cu.done === 'manual') {
-      label = '已下载 v' + (cu.next || '?') + '，请拖入 Applications 完成更新';
-    } else if (cu.done === 'replaced') {
-      label = '已更新到 v' + (cu.next || '?') + '，重启应用后生效';
-    } else if (cu.uptodate) {
-      label = '已是最新';
-    } else {
-      label = '可更新 v' + (cu.next || '?') + (cu.sourceLabel ? '（源：' + cu.sourceLabel + '）' : '');
-    }
-    var main = '<button class="dch-item dch-upd-item" data-act="check-client-update">' +
-        '<span>检查客户端更新…</span><span class="dch-upd-info">' + escHtml(label) + '</span>' +
-      '</button>';
-    // 有会话运行时安装会中断会话并重启应用：不再用隐晦的「再点一次确认」按钮
-    // 文案（用户体感「点了没反应」），改为明确的提示 + [继续安装]/[取消]。
-    if (cu.armed) {
-      return '<div class="dch-upd-col">' +
-        '<div class="dch-upd-row">' + main + '</div>' +
-        '<div class="dch-upd-confirm">' +
-          '<div class="dch-upd-confirm-msg">安装会中断当前会话并重启应用，确认继续？</div>' +
-          '<div class="dch-upd-confirm-btns">' +
-            '<button class="dch-install dch-confirm-go" data-act="install-client-update">继续安装</button>' +
-            '<button class="dch-install dch-confirm-cancel" data-act="cancel-install-confirm">取消</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-    }
-    // 安装按钮：仅「可更新」态显示。
-    var btn = (!cu.downloading && !cu.installing && !cu.done && !cu.uptodate)
-      ? '<button class="dch-install" data-act="install-client-update">下载并安装</button>'
-      : '';
-    return '<div class="dch-upd-row">' + main + btn + '</div>';
-  }
-  // 触发安装（auto=true 为 autoInstallUpdates 自动链——设置即授权，无页内
-  // 二次确认；手动链的会话提醒在 armOrInstall）。
-  function startClientUpdateInstall(auto) {
-    var cu = menuState.clientUpdate || {};
-    cu.downloading = true; cu.pct = 0; cu.armed = false; cu.auto = !!auto;
-    cu.uptodate = false; cu.done = null; cu.installing = false; cu.error = null; cu.errorKind = null;
-    menuState.clientUpdate = cu;
-    renderMenu();
-    dshDesktop.menu.action('install-client-update').then(function (r) {
-      var cur = menuState.clientUpdate || {};
-      cur.downloading = false;
-      if (r && r.upToDate) cur.uptodate = true;
-      else if (r && r.manual) cur.done = 'manual';
-      else if (r && r.replaced) cur.done = 'replaced';
-      else if (r && r.installing) cur.installing = true;
-      if (r && r.version) cur.next = String(r.version);
-      menuState.clientUpdate = cur;
-      renderMenu();
-      if (cur.done === 'manual') shellNotify('DSH Pack', '已下载 v' + (cur.next || '?') + '，请将 DSH Pack 拖入 Applications 完成更新');
-      if (cur.done === 'replaced') shellNotify('DSH Pack', '已更新到 v' + (cur.next || '?') + '，重启应用后生效');
-    }).catch(function (e) {
-      var cur = menuState.clientUpdate || {};
-      cur.downloading = false;
-      cur.errorKind = 'install';
-      cur.error = (e && e.message) ? String(e.message).replace(/^\[[A-Z_]+\]\s*/, '') : '未知错误';
-      menuState.clientUpdate = cur;
-      renderMenu();
-    });
-  }
-  function armOrInstall() {
-    var cu = menuState.clientUpdate;
-    if (!cu || cu.downloading || cu.installing || cu.done || cu.uptodate) return;
-    if (!currentSessionId || cu.armed) { startClientUpdateInstall(false); return; }
-    // 有会话运行：安装会杀内核中断会话——转 armed 态弹显式确认（updRowHtml
-    // 渲染提示 + [继续安装]/[取消]），点「继续安装」/「取消」解除。
-    cu.armed = true;
-    renderMenu();
-  }
-  // client-update-available 消费（仅主窗）：红点 + 一次系统通知（同版本去重）
-  // + autoInstallUpdates=true 时自动安装（有会话运行则只提醒不自动装——
-  // 自动链路无页内确认，中断会话必须留给用户手动决策）。
-  var notifiedUpdateVersion = '';
-  function handleClientUpdateAvailable(info) {
-    if (!isMainWindow()) return;
-    var next = String((info && (info.next || info.version)) || '');
-    if (!next) return;
-    menuState.clientUpdate = { next: next, sourceLabel: normSource(info && info.source) };
-    markUpdateDot(true);
-    if (notifiedUpdateVersion !== next) {
-      notifiedUpdateVersion = next;
-      shellNotify('DSH Pack', '发现新版本 v' + next + '，点击右上角 ⋯ 菜单查看并安装');
-    }
-    if (menuState.autoInstallUpdates === true && !currentSessionId) {
-      startClientUpdateInstall(true);
-    }
-    if (menuOpen) renderMenu();
-  }
-  // 页面就绪后主动补查一次（U2 兜底，修 #189）：壳的启动检查在 webview 挂上
-  // 监听之前就广播完了 client-update-available（updater_client.rs 模块文档已
-  // 写明该风险：「启动早期 webview 可能尚未挂监听而错过该事件——垫片可经菜单
-  // check-client-update 通道主动再查兜底」），而 Tauri 事件不重放 ⇒ 每次启动
-  // 的检测结果都到不了本页，红点/通知/自动安装一起落空。这里复用 ⋯ 菜单同一条
-  // 通道主动再查一次，结果交给 handleClientUpdateAvailable 统一消费（主窗守卫/
-  // 同版本通知去重/自动安装闸门的口径与事件链完全一致）。
-  // 壳页（loading/recovery/poc）跳过：其 localStorage 属另一 origin，
-  // currentSessionId 恒为空，会让「无会话才自动装」的闸门误判。
-  // 每页一次；失败/形态异常静默（与壳的「更新检查失败（静默忽略）」同口径）。
-  var clientUpdateProbed = false;
-  function probeClientUpdate() {
-    if (clientUpdateProbed || !isMainWindow()) return;
-    try {
-      if (/(^|\/)(loading|recovery|poc)\.html$/.test(location.pathname)) return;
-    } catch (e) { return; }
-    clientUpdateProbed = true;
-    try {
-      dshDesktop.menu.action('check-client-update').then(function (r) {
-        if (!r || r.ok !== true) return; // 形态异常：菜单路径才就地报错
-        if (r.upToDate) return;          // 已是最新：无红点、无通知、不安装
-        if (r.next) handleClientUpdateAvailable({ next: r.next, source: r.source });
-      }).catch(function () { /* 检查失败静默：同壳口径 */ });
-    } catch (e) { /* 同上 */ }
-  }
-  // 下载进度：直接改行尾文本（不整面板重渲染）；100% 转「正在安装…」
-  //（Windows 下进程即将退出，页面随之消亡）。
-  listeners.updProgress.push(function (p) {
-    var received = p && typeof p.received === 'number' ? p.received : 0;
-    var total = p && typeof p.total === 'number' ? p.total : 0;
-    var pct = total > 0 ? Math.floor(received * 100 / total) : 0;
-    if (pct > 100) pct = 100;
-    var cu = menuState.clientUpdate;
-    if (cu && cu.downloading) {
-      cu.pct = pct;
-      if (pct >= 100) cu.installing = true;
-      try {
-        var span = document.getElementById(MENU_ID);
-        span = span && span.querySelector('.dch-upd-info');
-        if (span) span.textContent = pct >= 100 ? '下载完成，正在安装…' : ('下载中 ' + pct + '%');
-      } catch (e) {}
-    }
-  });
   function renderMenu() {
     if (!menuPanel) return;
     var s = menuState;
-    var repos = s.repoUrls || {};
     var check = '<span class="dch-check">✓</span>';
     menuPanel.innerHTML =
       '<div class="dch-mh">' +
         '<div class="dch-mh-title">DSH Pack <span class="dch-mh-ver">v' + escHtml(s.appVersion || '?') + '</span></div>' +
         '<div class="dch-mh-sub"><span>agent v' + escHtml(s.agentVersion || '未知') + '</span><span>' + escHtml(s.agentSource || 'bundled') + '</span></div>' +
       '</div>' +
-      updRowHtml() +
-      '<div class="dch-repos">' +
-        '<div class="dch-repos-title">更新源（点行内「复制」拷贝地址）</div>' +
-        '<div class="dch-repo-row"><span class="dch-repo-url" title="' + escHtml(repos.github || '') + '">' + escHtml(repos.github || '') + '</span><button class="dch-copy" data-copy="github" title="复制地址">复制</button></div>' +
-        '<div class="dch-repo-row"><span class="dch-repo-url" title="' + escHtml(repos.gitee || '') + '">' + escHtml(repos.gitee || '') + '</span><button class="dch-copy" data-copy="gitee" title="复制地址">复制</button></div>' +
-      '</div>' +
       menuItemHtml('toggle-close-to-tray', '关闭时最小化到托盘', s.closeToTray ? check : '') +
-      menuItemHtml('toggle-auto-update', '自动安装客户端更新', s.autoInstallUpdates ? check : '') +
       '<div class="dch-sep"></div>' +
       menuItemHtml('set-custom-icon', '自定义图标…', '') +
       menuItemHtml('reset-custom-icon', '恢复默认图标', '') +
@@ -614,16 +415,13 @@
       menuItemHtml('open-browser', '在浏览器中打开', '') +
       menuItemHtml('open-logs', '打开日志目录', '') +
       '<div class="dch-sep"></div>' +
-      menuItemHtml('sponsor', '☕ 请作者喝咖啡', '') +
-      '<div class="dch-sep"></div>' +
-      menuItemHtml('about', '关于 DSH Pack', '') +
       menuItemHtml('quit', '退出', '', true);
     var items = menuPanel.querySelectorAll('button[data-act]');
     for (var i = 0; i < items.length; i++) {
       (function (el) {
         el.onclick = function () {
           var act = el.getAttribute('data-act');
-          if (act === 'toggle-close-to-tray' || act === 'toggle-auto-update') {
+          if (act === 'toggle-close-to-tray') {
             // 开关类：menu_action 读改写 settings.json 返回新值（单键），merge 后重渲染。
             dshDesktop.menu.action(act).then(function (next) {
               if (next && typeof next === 'object') { for (var k in next) menuState[k] = next[k]; }
@@ -631,66 +429,16 @@
             }).catch(function () { /* 失败维持现值 */ });
             return;
           }
-          if (act === 'check-client-update') {
-            // 就地反馈（不关菜单）：检查中… → 可更新 vX（源）/ 已是最新 / 检查失败。
-            var st = el.querySelector('.dch-upd, .dch-upd-info, .dch-upd-err');
-            if (st) st.textContent = '检查中…';
-            dshDesktop.menu.action('check-client-update').then(function (r) {
-              if (r && r.ok && r.upToDate) {
-                menuState.clientUpdate = { uptodate: true };
-                markUpdateDot(false);
-              } else if (r && r.ok && r.next) {
-                menuState.clientUpdate = { next: String(r.next), sourceLabel: normSource(r.source) };
-                markUpdateDot(true);
-              } else {
-                menuState.clientUpdate = { error: '返回形态异常' };
-              }
-              renderMenu();
-            }).catch(function (e) {
-              menuState.clientUpdate = {
-                error: (e && e.message) ? String(e.message).replace(/^\[[A-Z_]+\]\s*/, '') : '未知错误',
-                errorKind: 'check'
-              };
-              renderMenu();
-            });
-            return;
-          }
-          if (act === 'install-client-update') { armOrInstall(); return; }
-          if (act === 'cancel-install-confirm') {
-            // 取消有会话运行时的安装确认：回到「下载并安装」态，不关菜单、不发安装。
-            if (menuState.clientUpdate) menuState.clientUpdate.armed = false;
-            renderMenu();
-            return;
-          }
           if (act === 'set-custom-icon') { closeMenu(); applyCustomIconPick(); return; }
           if (act === 'reset-custom-icon') { closeMenu(); applyCustomIconReset(); return; }
           closeMenu();
-          if (act === 'sponsor') { try { dshDesktop.sponsorWindow(); } catch (e2) {} return; }
           try { dshDesktop.menu.action(act).catch(function () {}); } catch (e2) {}
         };
       })(items[i]);
     }
-    var copies = menuPanel.querySelectorAll('.dch-copy');
-    for (var j = 0; j < copies.length; j++) {
-      (function (btn) {
-        btn.onclick = function (ev) {
-          if (ev && ev.stopPropagation) ev.stopPropagation();
-          var kind = btn.getAttribute('data-copy');
-          var url = menuState.repoUrls ? (kind === 'github' ? menuState.repoUrls.github : menuState.repoUrls.gitee) : '';
-          if (!url) return;
-          // copy_text 成功 resolve（无返回体）/ 失败 reject——与 Electron {ok} 口径不同。
-          dshDesktop.copyText(url).then(function () {
-            var prev = btn.textContent;
-            btn.textContent = '已复制 ✓';
-            setTimeout(function () { btn.textContent = prev; }, 1200);
-          }).catch(function () {});
-        };
-      })(copies[j]);
-    }
   }
   function closeMenu() {
     menuOpen = false;
-    if (menuState.clientUpdate) menuState.clientUpdate.armed = false; // 关菜单解除二次确认态
     if (menuPanel) menuPanel.hidden = true;
   }
   // ---- 自定义桌面图标（⋯ 菜单「自定义图标…」/「恢复默认图标」）----
@@ -824,12 +572,7 @@
           '--dch-line:rgba(0,0,0,.10);--dch-hover:rgba(0,0,0,.06)}' +
           '#' + BALL_ID + ':hover{background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover));color:var(--dsw-alias-label-primary,var(--dch-fg))}' +
           '#' + BALL_ID + ' svg{width:14px;height:14px;display:block;fill:currentColor;stroke:none}' +
-          // 红点：与条形态 dch-dot 同款（markUpdateDot 直接打在钮上）。
-          // 0.6.3：球形态下面板锚球向上展开（原 top:CHROME_H+8 使面板与球分离两处，
-          // 观感即「菜单内容跑远/跑到别的屏幕」）；高度兜底滚动不出视口。
-          '#' + BALL_ID + ' > ' + '#' + MENU_ID + '{top:auto;bottom:52px;right:0;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 72px);overflow-y:auto}' +
-          '#' + BALL_ID + '.dch-dot::after{content:"";position:absolute;top:2px;right:2px;width:7px;height:7px;' +
-          'border-radius:50%;background:#ff5f57;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-bg-base,var(--dch-bg,#0b1220)) 88%,transparent)}';
+          '#' + BALL_ID + ' > ' + '#' + MENU_ID + '{top:auto;bottom:52px;right:0;width:272px;max-width:calc(100vw - 16px);max-height:calc(100vh - 72px);overflow-y:auto}';
         head.appendChild(css);
       }
       var ball = document.createElement('button');
@@ -841,7 +584,6 @@
       var spec = GLYPHS.menu;
       for (var i = 0; i < spec.length; i++) ic.appendChild(svgEl(spec[i].t, spec[i].a));
       ball.appendChild(ic);
-      if (updateDotOn) ball.classList.add('dch-dot');
       ball.onclick = function () { try { if (menuOpen) closeMenu(); else openMenu(); } catch (e2) {} };
       // ⋯ 菜单面板：钮的子元素（fixed 溢出钮本体渲染，与条形态同位）。
       var mDiv = document.createElement('div');
@@ -933,55 +675,11 @@
         '#' + MENU_ID + ' .dch-item:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover))}' +
         '#' + MENU_ID + ' .dch-item .dch-kbd{margin-left:auto;font-size:10.5px;color:var(--dsw-alias-label-caption,var(--dch-fg3));' +
           'font-family:var(--ds-font-family-code,Consolas,monospace)}' +
-        '#' + MENU_ID + ' .dch-item .dch-upd{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
         '#' + MENU_ID + ' .dch-item .dch-check{margin-left:auto;color:var(--dsw-alias-state-success-primary,#3ddc84);font-size:12px}' +
         '#' + MENU_ID + ' .dch-item[data-danger="1"]{color:var(--dsw-alias-state-error-primary,#ff7a85)}' +
         '#' + MENU_ID + ' .dch-sep{height:1px;background:var(--dsw-alias-border-l2,var(--dch-line));margin:5px 6px}' +
-        '#' + MENU_ID + ' .dch-repos{padding:6px 10px 10px;margin:2px 0 4px;border-radius:10px;' +
-          'border:1px solid var(--dsw-alias-border-l2,var(--dch-line));' +
-          'background:var(--dsw-alias-bg-layer-3,color-mix(in srgb,var(--dch-bg,#0b1220) 97%,white))}' +
-        '#' + MENU_ID + ' .dch-repos-title{font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dch-fg3));margin-bottom:4px}' +
-        '#' + MENU_ID + ' .dch-repo-row{display:flex;align-items:center;gap:6px;min-height:24px}' +
-        '#' + MENU_ID + ' .dch-repo-url{flex:1;min-width:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
-          'user-select:text;cursor:text;color:var(--dsw-alias-label-secondary,var(--dch-fg2));' +
-          'font-family:var(--ds-font-family-code,Consolas,monospace)}' +
-        '#' + MENU_ID + ' .dch-copy{flex:none;appearance:none;border-radius:4px;padding:2px 8px;font-size:10.5px;line-height:16px;' +
-          'min-width:fit-content;white-space:nowrap;box-sizing:border-box;' +
-          'cursor:pointer;font-family:inherit;border:1px solid var(--dsw-alias-border-l2,var(--dch-line));' +
-          'background:transparent;color:var(--dsw-alias-label-secondary,var(--dch-fg2))}' +
-        '#' + MENU_ID + ' .dch-copy:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover));' +
-          'color:var(--dsw-alias-label-primary,var(--dch-fg))}' +
-        // 客户端更新行：主行（可更新信息）+ [下载并安装] 按钮并排；
-        // 错误/长文案可换行（.dch-kbd 的 110px 截断不适合整句回显）。
-        '#' + MENU_ID + ' .dch-upd-row{display:flex;align-items:center;gap:4px;padding:2px 0}' +
-        '#' + MENU_ID + ' .dch-upd-row .dch-upd-item{flex:1;min-width:0}' +
-        '#' + MENU_ID + ' .dch-upd-info{margin-left:auto;font-size:10.5px;color:var(--dsw-alias-label-caption,var(--dch-fg3));' +
-          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:132px;' +
-          'font-family:var(--ds-font-family-code,Consolas,monospace)}' +
-        '#' + MENU_ID + ' .dch-upd-err{color:var(--dsw-alias-state-error-primary,#ff7a85);white-space:normal;' +
-          'max-width:150px;line-height:14px;font-family:var(--dsw-font-family,"Segoe UI","Microsoft YaHei",system-ui,sans-serif)}' +
-        '#' + MENU_ID + ' .dch-install{flex:none;appearance:none;border-radius:6px;padding:3px 8px;font-size:10.5px;' +
-          'line-height:16px;cursor:pointer;font-family:inherit;white-space:nowrap;min-width:fit-content;box-sizing:border-box;' +
-          'border:1px solid var(--dsw-alias-border-l2,var(--dch-line));' +
-          'background:transparent;color:var(--dsw-alias-label-secondary,var(--dch-fg2))}' +
-        '#' + MENU_ID + ' .dch-install:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover));' +
-          'color:var(--dsw-alias-label-primary,var(--dch-fg))}' +
-        '#' + MENU_ID + ' .dch-upd-col{display:flex;flex-direction:column;gap:4px;padding:2px 0}' +
-        '#' + MENU_ID + ' .dch-upd-confirm{padding:7px 8px;border:1px solid var(--dsw-alias-state-warning-primary,#ffb86c);' +
-          'border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#ffb86c) 8%,transparent)}' +
-        '#' + MENU_ID + ' .dch-upd-confirm-msg{font-size:11px;line-height:16px;' +
-          'color:var(--dsw-alias-label-primary,var(--dch-fg,#e6ecff));margin-bottom:6px}' +
-        '#' + MENU_ID + ' .dch-upd-confirm-btns{display:flex;gap:6px;justify-content:flex-end}' +
-        '#' + MENU_ID + ' .dch-install.dch-confirm-go{color:var(--dsw-alias-state-warning-primary,#ffb86c);' +
-          'border-color:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#ffb86c) 55%,transparent)}' +
         // ⋯ 图形是实心三点：覆盖条按钮的线性 stroke 缺省。
-        '#' + CHROME_ID + ' button.dch-menu-btn svg{fill:currentColor;stroke:none}' +
-        // ⋯ 按钮红点：启动自动检查发现新版本（client-update-available）时打点，
-        // 用户检查/确认处理后摘除。
-        '#' + CHROME_ID + ' button.dch-menu-btn{position:relative}' +
-        '#' + CHROME_ID + ' button.dch-menu-btn.dch-dot::after{content:"";position:absolute;top:3px;right:3px;' +
-          'width:7px;height:7px;border-radius:50%;background:#ff5f57;' +
-          'box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-bg-base,var(--dch-bg,#0b1220)) 88%,transparent)}';
+        '#' + CHROME_ID + ' button.dch-menu-btn svg{fill:currentColor;stroke:none}';
         head.appendChild(css);
       }
       if (NATIVE_TITLE_BAR) { injectMenuBall(); return; }
@@ -1030,10 +728,7 @@
       maxBtn.appendChild(glyphSvg('restore', 'ic-restore'));
       btns.appendChild(mkBtn('dch-menu-btn', 'menu', '菜单', function () {
         if (menuOpen) closeMenu(); else openMenu();
-      })); // ⋯ 在 min/max/close 左边（Electron 同序）；红点（dch-dot）由
-      // markUpdateDot 动态打/摘——捕获元素引用，自愈重注后按 updateDotOn 重打。
-      var menuBtnEl = btns.querySelector('button.dch-menu-btn');
-      if (menuBtnEl && updateDotOn) menuBtnEl.classList.add('dch-dot');
+      })); // ⋯ 在 min/max/close 左边（Electron 同序）
       btns.appendChild(mkBtn('dch-min', 'min', '最小化', function () { dshDesktop.windowControls.minimize(); }));
       btns.appendChild(maxBtn);
       btns.appendChild(mkBtn('dch-close', 'close', '关闭', function () { dshDesktop.windowControls.close(); }));
@@ -1149,13 +844,7 @@
     } catch (e) { /* 同上：防御性兜底 */ }
   });
 
-  // 自初始化：回填 appVersion（失败静默——浏览器模式常见）+ 订阅客户端
-  // 更新事件（启动自动检查命中：红点/通知/自动安装，仅主窗——见
-  // handleClientUpdateAvailable 的守卫说明）；事件在启动期就已经广播完
-  // （webview 尚未挂监听），故 getInfo merge 之后再主动补查一次兜底。
-  // RV3 P1-1：getInfo 结果必须 merge 进 menuState——否则 autoInstallUpdates
-  // 恒为缺省 false，重启后「自动安装客户端更新」永不触发（除非本会话先
-  // 开过一次 ⋯ 菜单触发 openMenu 的 getInfo）。
+  // 自初始化：回填 appVersion 与菜单状态（失败静默——浏览器模式常见）。
   try {
     dshDesktop.getInfo().then(function (info) {
       if (info && typeof info === 'object') {
@@ -1163,9 +852,8 @@
           try { menuState[k] = info[k]; } catch (e) { /* 只读字段跳过 */ }
         }
       }
-    }).catch(function () {}).then(probeClientUpdate);
-  } catch (e) { probeClientUpdate(); }
-  listeners.clientUpdate.push(handleClientUpdateAvailable);
+    }).catch(function () {});
+  } catch (e) {}
 
   // ---- 文件拖放转发（F1）已于 2026-10 随文件拖放插件裁撤整体移除：壳侧不再
   // 广播该事件，页面级 CustomEvent 与全屏悬停提示层一并撤除，无残留消费方。

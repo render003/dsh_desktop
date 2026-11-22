@@ -126,8 +126,8 @@ test('在册舰队：以 pin 内核版本的 peer 判定必须 0 拒挂（DSH-0.
 
   // 清单↔源 1:1（与 unit-hub-registry 的收口用例同向，这里证明本守卫真的覆盖到全部条目）。
   assert.deepEqual(orphan, [], `COMPANION_PLUGINS 有条目在 assets/plugins 找不到源包：\n  ${orphan.join('\n  ')}`);
-  assert.equal(COMPANION_PLUGINS.length, 33, '在册条目数已变（本守卫的阈值与台账需随迁）');
-  assert.equal(byName.size, 33, `assets/plugins 源目录数 ${byName.size} 与清单不同数`);
+  assert.equal(COMPANION_PLUGINS.length, 32, '在册条目数已变（本守卫的阈值与台账需随迁）');
+  assert.equal(byName.size, 32, `assets/plugins 源目录数 ${byName.size} 与清单不同数`);
 
   // 覆盖哨兵：33 条里 19 条声明 dsh 族 peer（2026-10-22 实测 62 个键，新增 5 件贡献
   // 24 个键：free-search 5 / shop 3 / toolbox 8 / notify 8，network-proxy 无 peer；

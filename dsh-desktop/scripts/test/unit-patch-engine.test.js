@@ -429,15 +429,15 @@ test('companion-plugins: 既有前缀顺序与 workspace-anchor 位置唯一（�
   // dsh-vision / graph-memory / community-market 六条从前 18 位里退出，其余条目整体
   // 前移（workspace-anchor 11→8）；本锁的原意不变——既有相对顺序不得漂移。
   assert.deepStrictEqual(
-    ids.slice(0, 18),
+    ids.slice(0, 17),
     [
       'balance', 'file-changes', 'better-sidebar', 'dsh-session-manager',
       'conversation-tweaks', 'dsh-super-injector', 'prompt-custom',
-      'workspace-anchor', 'wsl-settings', 'bot', 'bili-native',
+      'workspace-anchor', 'wsl-settings', 'bili-native',
       'dsh-pocket', 'openclaw-bridge', 'input-history', 'dsh-easyrewrite',
       'change-review', 'offpeak', 'settings-nav-custom',
     ],
-    '既有前缀顺序不得漂移（新增/改名须同步更新本测试；dsh-navbar 已随内核换代退役；plugin-manager 于 v1.0.0 退役——包名与官方内核包同名会遮蔽 profiles/web 里的官方 pluginManager；quest-ui / auto-compact 于 2026-11-08 退役）'
+    '既有前缀顺序不得漂移（新增/改名须同步更新本测试；dsh-navbar 已随内核换代退役；plugin-manager 于 v1.0.0 退役；quest-ui / auto-compact 于 2026-11-08 退役；bot/ds-bot 于 2026-11-22 退役）'
   );
   assert.strictEqual(ids.indexOf('workspace-anchor'), 7, 'workspace-anchor 应固定在 prompt-custom 之后');
   assert.strictEqual(ids.filter((id) => id === 'workspace-anchor').length, 1, 'workspace-anchor 不得重复');

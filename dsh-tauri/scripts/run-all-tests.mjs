@@ -32,7 +32,44 @@ const TAURI_ROOT = resolve(HERE, '..');
 const DESKTOP_DIR = join(TAURI_ROOT, '..', 'dsh-desktop');
 const REPORT_PATH = join(TAURI_ROOT, 'test-report.json');
 const CARGO_DIR = join(TAURI_ROOT, 'src-tauri');
-const RELEASE_EXE = join(CARGO_DIR, 'target', 'release', 'dsh-tauri-app.exe');
+
+function resolveCargoTargetRoot() {
+  const r = spawnSync(
+    'cargo',
+    ['metadata', '--manifest-path', join(CARGO_DIR, 'Cargo.toml'), '--format-version', '1', '--no-deps'],
+    { encoding: 'utf8', cwd: CARGO_DIR, maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (r.status === 0 && r.stdout) {
+    try {
+      const meta = JSON.parse(r.stdout);
+      if (meta && typeof meta.target_directory === 'string' && meta.target_directory.trim()) {
+        return meta.target_directory.trim();
+      }
+    } catch {
+      // 回落到工作区默认 target 目录
+    }
+  }
+  return join(CARGO_DIR, 'target');
+}
+
+function resolveReleaseExe() {
+  if (process.env.TARGET_DIR) {
+    return join(process.env.TARGET_DIR, 'dsh-tauri-app.exe');
+  }
+  const targetRoot = resolveCargoTargetRoot();
+  const profile = process.env.PROFILE || 'release';
+  const explicitTriple = process.env.TARGET_TRIPLE || process.env.CARGO_BUILD_TARGET || '';
+  if (explicitTriple) {
+    return join(targetRoot, explicitTriple, profile, 'dsh-tauri-app.exe');
+  }
+  const candidates = [
+    join(targetRoot, 'x86_64-pc-windows-msvc', profile, 'dsh-tauri-app.exe'),
+    join(targetRoot, 'x86_64-pc-windows-gnu', profile, 'dsh-tauri-app.exe'),
+    join(targetRoot, 'aarch64-pc-windows-msvc', profile, 'dsh-tauri-app.exe'),
+    join(targetRoot, profile, 'dsh-tauri-app.exe'),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+}
 
 // 默认豁免清单：已知环境项（Windows 环境缺 tar.exe 等），可被 --allow 追加。
 const DEFAULT_ALLOWS = [
@@ -252,8 +289,9 @@ if (existsSync(vus)) {
   console.log('      verify-update-sources -> skip（脚本不存在）');
 }
 
+const RELEASE_EXE = resolveReleaseExe();
 if (existsSync(RELEASE_EXE)) {
-  // B1 断言语义：DLL 应随包旁路分发。target/release 是构建目录非打包产物，
+  // B1 断言语义：DLL 应随包旁路分发。Cargo target_directory/<triple?>/release 是构建目录非打包产物，
   // 入库的分发副本在 <tauri>/dlls/——存在则以该目录作为 --beside 旁路目录。
   const dllsDir = join(TAURI_ROOT, 'dlls');
   const beside = existsSync(join(dllsDir, 'D3DCOMPILER_47.dll')) ? ['--beside', dllsDir] : [];

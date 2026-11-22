@@ -32,11 +32,10 @@ const { resolveGithubRelease } = require('../plugin-manager-update.js');
 
 // ── 1. 表内容 ───────────────────────────────────────────────────────────────
 
-test('更新源表：8 条（2 既有 + 6 新增；2026-11-09 把 compaction-acp 换成 bili-native），id/包名逐条精确', () => {
+test('更新源表：7 条（2 既有 + 5 新增；2026-11-22 随 ds-bot 退役移除 bot），id/包名逐条精确', () => {
   assert.deepEqual(Object.keys(UPDATE_SOURCES).sort(), [
     'better-sidebar',
     'bili-native',
-    'bot',
     'dsh-notify',
     'mcp-manager-ui',
     'network-proxy',
@@ -44,13 +43,13 @@ test('更新源表：8 条（2 既有 + 6 新增；2026-11-09 把 compaction-acp
     'web-search-free',
   ]);
 
-  // 既有两条不得回归（历史语义：#80/#90）；side-session 已随「临时对话」退役。
+  // 既有两条不得回归（历史语义：#80/#90）；side-session / bot 已退役。
   assert.deepEqual(UPDATE_SOURCES['bili-native'], { kind: 'npm', pkg: 'billion-context' });
   assert.equal(UPDATE_SOURCES['compaction-acp'], undefined, '旧件已退役，更新源不得残留');
+  assert.equal(UPDATE_SOURCES.bot, undefined, 'ds-bot 已退役，更新源不得残留');
   assert.deepEqual(UPDATE_SOURCES['better-sidebar'], { kind: 'npm', pkg: 'dsh-better-sidebar' });
 
-  // 新增六条：id 是 loader id，pkg/repo 是真正取数的坐标。
-  assert.deepEqual(UPDATE_SOURCES.bot, { kind: 'npm', pkg: 'ds-bot' });
+  // 新增五条：id 是 loader id，pkg/repo 是真正取数的坐标。
   assert.deepEqual(UPDATE_SOURCES['web-search-free'], { kind: 'npm', pkg: 'dsh-free-search' });
   assert.deepEqual(UPDATE_SOURCES.shop, { kind: 'npm', pkg: 'dsh-plugin-shop' });
   assert.deepEqual(UPDATE_SOURCES['network-proxy'], { kind: 'github', repo: 'baizhizzl/dsh-network-proxy' });
@@ -62,14 +61,12 @@ test('更新源表：8 条（2 既有 + 6 新增；2026-11-09 把 compaction-acp
 
 // ── 2. 排除机制 ─────────────────────────────────────────────────────────────
 
-test('排除机制：better-sidebar / bot 被排除且原因可读，其余条目不受影响', () => {
+test('排除机制：better-sidebar 被排除且原因可读，其余条目不受影响', () => {
   assert.equal(isUpdateExcluded('better-sidebar'), true);
   assert.match(updateExclusionReason('better-sidebar'), /本地重建/);
-  assert.equal(isUpdateExcluded('bot'), true);
-  assert.match(updateExclusionReason('bot'), /vendored|覆盖/);
 
   for (const id of Object.keys(UPDATE_SOURCES)) {
-    if (id === 'better-sidebar' || id === 'bot') continue;
+    if (id === 'better-sidebar') continue;
     assert.equal(isUpdateExcluded(id), false, id + ' 不应被排除');
     assert.equal(updateExclusionReason(id), '');
   }
@@ -180,7 +177,7 @@ test('plugin-core：updates.sources 与唯一表同源，排除项在 update 直
 
   const center = createPluginCenter({ getHome: () => home, getProfile: () => 'web' });
   assert.equal(center.updates.sources, UPDATE_SOURCES, '装配根不得再复制一份表');
-  assert.equal(Object.keys(center.updates.sources).length, 8);
+  assert.equal(Object.keys(center.updates.sources).length, 7);
 
   await assert.rejects(center.updates.update('better-sidebar'), (err) => {
     assert.equal(err.code, 'PLUGIN_NOT_FOUND');

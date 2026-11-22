@@ -30,7 +30,6 @@ const SRC = {
   pages: 'dsh-tauri/src-tauri/src/app/src/pages.rs',
   shim: 'dsh-tauri/src-tauri/crates/bridge/dist/bridge-shim.js',
   menu: 'dsh-tauri/src-tauri/src/app/src/commands/menu.rs',
-  updater: 'dsh-tauri/src-tauri/src/app/src/commands/updater_client.rs',
   wsl: 'dsh-tauri/src-tauri/src/app/src/commands/wsl.rs',
   notify: 'dsh-tauri/src-tauri/src/app/src/session_notify.rs',
   lib: 'dsh-tauri/src-tauri/src/app/src/lib.rs',
@@ -152,23 +151,18 @@ function buildShimMenuSnapshot() {
   const re = /menuItemHtml\('([^']+)',\s*'([^']+)'/g;
   let m;
   while ((m = re.exec(renderSeg))) items.push({ act: m[1], label: m[2] });
-  // 更新行全状态文案（updRowHtml 状态机内的中文字面量，依序）。
-  const updSeg = fnSeg(js, 'function updRowHtml()', 'function startClientUpdateInstall');
-  const updLabels = jsHanLiterals(js, updSeg).map((x) => x.text);
-  // 就地反馈/复制按钮等其他菜单区文案。
+  // 其他菜单区文案（客户端更新行已随自更新链整体裁撤，2026-11-22）。
   const miscSeg = fnSeg(js, 'var menuPanel = null', 'function closeMenu()');
   const misc = [...new Set(jsHanLiterals(js, miscSeg).map((x) => x.text))];
-  return { menuItems: items, updateRowLabels: updLabels, otherMenuTexts: misc };
+  return { menuItems: items, otherMenuTexts: misc };
 }
 
 // ---- 3. 错误文案常量清单 ----------------------------------------------------
 
 function buildErrorMessagesSnapshot() {
   const snap = {};
-  // menu.rs（updater 错误归一 + 菜单动作错误 + devtools 降级）。
+  // menu.rs（菜单动作错误 + devtools 降级）。
   snap.menuRs = rsHanLiterals(implSeg(readSrc('menu')));
-  // updater_client.rs（Display/ToBridge 文案）。
-  snap.updaterClientRs = rsHanLiterals(implSeg(readSrc('updater')));
   // wsl.rs 校验文案。
   snap.wslRs = rsHanLiterals(implSeg(readSrc('wsl')));
   // session_notify.rs（watcher 生命周期日志文案 + 错误）。
@@ -239,8 +233,8 @@ function meta(sources, note) {
 
 const SNAPSHOTS = {
   'pages-visible-text.json': [buildPagesSnapshot, [SRC.pages], 'loading/recovery 壳页可见文本全集（剥标签行集 + title/aria 属性 + script 动态文案）'],
-  'shim-menu-text.json': [buildShimMenuSnapshot, [SRC.shim], '垫片 ⋯ 菜单：菜单项序 + 客户端更新行全状态文案 + 其他菜单区文案'],
-  'error-messages.json': [buildErrorMessagesSnapshot, [SRC.menu, SRC.updater, SRC.wsl, SRC.notify, SRC.lib, SRC.windows, SRC.watcher], '错误文案常量清单（含 file:line）'],
+  'shim-menu-text.json': [buildShimMenuSnapshot, [SRC.shim], '垫片 ⋯ 菜单：菜单项序 + 其他菜单区文案'],
+  'error-messages.json': [buildErrorMessagesSnapshot, [SRC.menu, SRC.wsl, SRC.notify, SRC.lib, SRC.windows, SRC.watcher], '错误文案常量清单（含 file:line）'],
   'tray.json': [buildTraySnapshot, [SRC.lib], '托盘 tooltip + 菜单项序'],
   'notifications.json': [buildNotificationsSnapshot, [SRC.notify, SRC.shim, SRC.lib], '桌面通知标题/正文模板（含 fallback）'],
 };
