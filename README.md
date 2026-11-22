@@ -153,7 +153,6 @@ DSH Pack 把这件事做完：**精选，整合，随包交付。**
 | `dsh-toolbox-ui` | 1.13.0 | MCP / 技能工具箱：右下悬浮面板，MCP 市场与技能管理（loader id 是 `mcp-manager-ui`；宿主半边静态导入 `smol-toml`） | [Imzl-zl/dsh-toolbox-ui](https://github.com/Imzl-zl/dsh-toolbox-ui) · MIT |
 | `@bittersmilezzz/dsh-notify` | 0.4.5 | 桌面通知：渲染进程 Web Notification 六类事件 + 点击回会话，v1.0.7 起取代壳层「回合完成」通知 | [bitterSmilezzz/dsh-notify](https://github.com/bitterSmilezzz/dsh-notify) · MIT |
 | `dsh-context` | 0.86.0 | 上下文透视：右栏上下文看板 + `/context` 命令，拆解当前上下文由什么构成、如何随轮次演变 | [bowenliang123/dsh-context](https://github.com/bowenliang123/dsh-context) · Apache-2.0 |
-| `ds-harness-remote` | 0.6.5 | 端到端加密远程访问：桌面 / Web / 安卓远控本机 DSH，含 dsh-TUI Host 支持（内层依赖树随包分发，WebRTC 走纯 JS werift） | [liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote) · MIT |
 
 **清单变更史**（新增 / 退役的逐条理由、上游可达性与许可原文）在 [内置插件清单](dsh-desktop/docs/builtin-plugins-inventory.md)，这里只留一行摘要：
 v1.0.0 由 39 精简到 28；2026-11-08 移除 `quest-ui` / `auto-compact` / `zcode-migrate` 三件；2026-11-09 新增 `dsh-context` 与 `ds-harness-remote` 并升 8 件到 npm latest；

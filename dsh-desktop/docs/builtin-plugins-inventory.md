@@ -101,7 +101,6 @@
 | 30 | `mcp-manager-ui` | `dsh-toolbox-ui` | 1.13.0 | MCP / 技能工具箱：右下悬浮面板，MCP 市场与技能管理；宿主半边静态导入 `smol-toml`（BSD-3-Clause，见 `THIRD_PARTY_NOTICES.md` §1.1） | `Imzl-zl/dsh-toolbox-ui`，MIT |
 | 31 | `dsh-notify` | `@bittersmilezzz/dsh-notify` | 0.4.5 | 桌面通知：渲染进程 Web Notification 六类事件 + 点击回会话，v1.0.6 起取代壳层「回合完成」通知 | `bitterSmilezzz/dsh-notify`，MIT |
 | 32 | `dsh-context` | `dsh-context` | 0.86.0 | 上下文透视：右栏上下文看板 + `/context` 命令，拆解当前上下文由什么构成、如何随轮次演变（bundle 层 loader id 与包名同形；宿主半边只依赖 zod / `dsh-session` / schemastery，无内层依赖树） | `bowenliang123/dsh-context`，**Apache-2.0** |
-| 33 | `ds-harness-remote` | `ds-harness-remote` `nm` | 0.6.5 | 端到端加密远程访问：桌面 / Web / 安卓远控本机 DSH，含 dsh-TUI Host 支持；内层 `node_modules` 随包正件分发（`shipsNodeModules`），WebRTC 走纯 JS `werift`（不装 optional 的 `@roamhq/wrtc`） | `liguobao/ds-harness-remote`，MIT |
 
 ### 已退役（源目录已删除；`RETIRED_COMPANIONS` 只留「名字」给 profile 回收用）
 
@@ -765,7 +764,6 @@ npm 列额外带 `身份 <same|foreign|unverifiable|unknown>／维护者`——*
 | 29 | `mcp-manager-ui` | `dsh-toolbox-ui` | 1.13.0 | 11 peer `>=0.2.1-rc.5 <0.3.0` | 无此件 | 1.13.0（等版｜身份 same｜Imzl-zl） | 1 别名 / 0 成员 / 1 裸名 → 缺失 0 · 表外 0 · 声明 1 · 移除引用 0 | **新增（2026-10-22 用户点名内置，MIT）**：右下悬浮「工具箱」+ 侧栏底部入口（MCP 市场 / 技能管理，typert 37 个 Remote）；`mcp-import-sources` 静态导入 `smol-toml`（BSD-3-Clause），已加入 `dsh-desktop/package.json` 依赖与 `VENDOR_DEPS`。更新源 `mcp-manager-ui` → npm `dsh-toolbox-ui`。 |
 | 30 | `dsh-notify` | `dsh-notify` | 0.4.5 | 12 peer `^0.2.1-rc.2` | 无此件 | 0.4.5（等版｜身份 same｜bitterSmilezzz） | 3 别名 / 3 成员 / 3 裸名 → 缺失 0 · 表外 0 · 声明 7 · 移除引用 0 | **新增（2026-10-22 用户点名内置，MIT）**：渲染进程 Web Notification 六类事件（审批/提问/轮次/会话结束/出错/子代理）+ 点击回会话；宿主半边是空 apply + volatile Config，零副作用。**接入后壳层「回合完成」通知下线**（保留 session watcher 的 `active_turns` 假死判定与 ACP/崩溃通知）。更新源 `dsh-notify` → npm `@bittersmilezzz/dsh-notify`。 |
 | 31 | `dsh-context` | `dsh-context` | 0.86.0 | 6 peer `>=0.2.0-rc.2 或 >=0.2.1-rc.2 或 >=0.2.2-rc.1`（另 cordis / schemastery / react / react-dom） | 无此件 | 0.86.0（等版｜身份 same／bowenliang123） | 0 别名 / 0 成员 / 0 裸名 → 缺失 0 · 表外 0 · 声明 6 · 移除引用 0 | **2026-11-09 新增（上游整包 vendored 0.82.1）**：右栏上下文看板 + `/context` 命令；宿主半边只用宿主闭包的 `dsh-session`/`schemastery` 与 VENDOR_DEPS 的 `zod`，自身不带依赖树。0.83.0 于 2026-11-09 由 0.82.1 升级（先前按用户点名落的是 0.82.1） |
-| 32 | `ds-harness-remote` | `ds-harness-remote` | 0.6.5 | 13 peer `>=0.2.0-rc.1 <0.3.0-0 或 >=0.2.1-0 <0.2.2-0 或 >=0.2.2-0 <0.2.3-0` | 无此件 | 0.6.5（等版｜身份 same／liguobao） | 4 别名 / 0 成员 / 0 裸名 → 缺失 0 · 表外 0 · 声明 10 · 移除引用 0 | **2026-11-09 新增（上游整包 vendored，当日 0.5.19 → 0.6.4）**：内层 `node_modules` 随包正件分发（34.9MB / 3413 文件，缺 optional 的 `@roamhq/wrtc` 原生件；0.6.4 起 `werift` 不再进依赖树，WebRTC 走 dist 内联的纯 JS 回退）；bundle patch 有桌面 / TUI 两条 insert 行，桌面行 id 即清单 id |
 
 计数对账（**2026-10-17 按 `scan-plugin-channels.mjs --npm` 现跑输出重述**，当时在册 34 条——2026-11-08 退役 3 件后在册 31 条，本节数字为快照口径；
 §5.2 表内的 d-pack / npm 两列是 2026-10-08 那轮抄录、`unit-hub-registry` 不锁网络通道，**以本段为准**）：

@@ -126,17 +126,13 @@ test('在册舰队：以 pin 内核版本的 peer 判定必须 0 拒挂（DSH-0.
 
   // 清单↔源 1:1（与 unit-hub-registry 的收口用例同向，这里证明本守卫真的覆盖到全部条目）。
   assert.deepEqual(orphan, [], `COMPANION_PLUGINS 有条目在 assets/plugins 找不到源包：\n  ${orphan.join('\n  ')}`);
-  assert.equal(COMPANION_PLUGINS.length, 32, '在册条目数已变（本守卫的阈值与台账需随迁）');
-  assert.equal(byName.size, 32, `assets/plugins 源目录数 ${byName.size} 与清单不同数`);
+  assert.equal(COMPANION_PLUGINS.length, 31, '在册条目数已变（本守卫的阈值与台账需随迁）');
+  assert.equal(byName.size, 31, `assets/plugins 源目录数 ${byName.size} 与清单不同数`);
 
-  // 覆盖哨兵：33 条里 19 条声明 dsh 族 peer（2026-10-22 实测 62 个键，新增 5 件贡献
-  // 24 个键：free-search 5 / shop 3 / toolbox 8 / notify 8，network-proxy 无 peer；
-  // 2026-11-08 退役的 quest-ui / auto-compact / zcode-migrate 三件均为 0 peer；
-  // 2026-11-09 新增的 dsh-context / ds-harness-remote 两件共 16 个键——
-  // withFamily 17 → 19、familyKeys 62 → 78）。
+  // 覆盖哨兵：31 条里仍有充足插件声明 dsh 族 peer（2026-11-22 移除 ds-bot 与 ds-harness-remote）。
   // 若掉到个位数说明读取脱靶，「0 拒挂」就只是因为什么都没判。
-  assert.ok(withFamily >= 14, `只有 ${withFamily} 条声明 dsh 族 peer，采集已脱靶`);
-  assert.ok(familyKeys >= 55, `只核到 ${familyKeys} 个 dsh 族 peer 键，采集已脱靶`);
+  assert.ok(withFamily >= 13, `只有 ${withFamily} 条声明 dsh 族 peer，采集已脱靶`);
+  assert.ok(familyKeys >= 45, `只核到 ${familyKeys} 个 dsh 族 peer 键，采集已脱靶`);
 
   assert.deepEqual(denied, [],
     `以下插件会被内核静默禁用（peer 与 ${runtime} 不兼容）：\n  ${denied.join('\n  ')}`);
@@ -146,7 +142,7 @@ test('反向捕获力：把在册插件的真实 peer 收回旧上界，舰队�
   const runtime = boot.getDshRuntimeVersion();
   const byName = fleetIndex();
   const cases = [
-    ['ds-harness-remote', '@deepseek-ai/dsh-api-gateway', '>=0.0.0 <0.1.0-0'],
+    ['dsh-plugin-shop', '@deepseek-ai/dsh-app-boot', '>=0.0.0 <0.1.0-0'],
     ['dsh-better-sidebar', '@deepseek-ai/dsh-client-ui-primitives', '^0.1.0-rc.8'],
   ];
   for (const [pkg, key, oldRange] of cases) {

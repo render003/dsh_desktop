@@ -185,7 +185,7 @@ Invoke-Mirror -Source (Join-Path $SrcDesktop 'scripts') -Destination (Join-Path 
 Invoke-Mirror -Source (Join-Path $SrcDesktop 'assets') -Destination (Join-Path $DstDesktop 'assets') -ExtraArgs @('/XD', '.pnpm')
 
 # 清理安装目录可能残留的已裁撤资源目录
-foreach ($retired in @('assets\sponsor', 'assets\plugins\ds-bot')) {
+foreach ($retired in @('assets\sponsor', 'assets\plugins\ds-bot', 'assets\plugins\ds-harness-remote')) {
     $rp = Join-Path $DstDesktop $retired
     if (Test-Path $rp) { Remove-Item -Recurse -Force $rp }
 }

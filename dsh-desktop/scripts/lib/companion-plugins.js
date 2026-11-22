@@ -171,16 +171,8 @@ const COMPANION_PLUGINS = [
   // zod / @deepseek-ai/dsh-session / @deepseek-ai/schemastery——前两者由宿主闭包
   // 与 VENDOR_DEPS 提供，自身无内层依赖树（不设 shipsNodeModules）。
   { id: 'dsh-context', name: 'dsh-context' },
-  // 端到端加密远程访问（liguobao/ds-harness-remote，MIT，0.6.5）：桌面 / Web / 安卓
-  // 远控本机 DSH，含 dsh-TUI Host 支持。它的 dist 是 esbuild 产物，运行时真依赖
-  // ws / qrcode / zod@3 / @xterm/* 等（宿主闭包与 VENDOR_DEPS 都不提供），故内层
-  // node_modules 随包正件分发（shipsNodeModules）。
-  // 与上游整包的唯一差别：不装 optionalDependencies 的 @roamhq/wrtc（单平台原生
-  // .node）；0.6.4 起上游把 werift 收进 dist，依赖树不再需要它。
-  // bundle 层 cordis.patch.yml 有两条 insert 行（`ds-harness-remote` 桌面行 +
-  // `ds-harness-remote-tui` TUI 行），本清单登记的是桌面行的 id；TUI 行靠自己的
-  // `!!js` 条件在无 dsh-tui 时禁用。
-  { id: 'ds-harness-remote', name: 'ds-harness-remote', shipsNodeModules: true },
+  // 2026-11-22 按用户要求移除 ds-harness-remote（端到端加密远程访问）：摘出清单、删除
+  // assets/plugins/ds-harness-remote 源目录，并进 RETIRED_COMPANIONS 自动回收存量 profile。
 ];
 
 /** 包名 → assets/plugins 下的目录名（去 scope 前缀）。 */
@@ -289,6 +281,9 @@ const RETIRED_COMPANIONS = [
   // 2026-11-22 按用户要求移除 DS Bot（ds-bot，loader id `bot`）：摘出清单、删除
   // assets/plugins/ds-bot 源目录，并在存量 profile 同步期自动撤回 patch 行与目录。
   { id: 'bot', name: 'ds-bot' },
+  // 2026-11-22 按用户要求移除 ds-harness-remote（端到端加密远程访问）：摘出清单、删除
+  // assets/plugins/ds-harness-remote 源目录，并在存量 profile 同步期自动撤回 patch 行与目录。
+  { id: 'ds-harness-remote', name: 'ds-harness-remote', legacyIds: ['ds-harness-remote-tui'] },
 ];
 
 /** 退役登记表 → assets/plugins 目录名（去 scope 前缀），供过期清理认领。 */

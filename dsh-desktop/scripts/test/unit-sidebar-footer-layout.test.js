@@ -40,20 +40,9 @@ test('sidebar-footer-layout：在真实 dsh-client-ui-sidebar 上生效、幂等
   assert.equal(bad.status, 'anchor-missing');
 });
 
-test('插件底部入口对齐原生 42px 满宽行：dsh-toolbox-ui 与 ds-harness-remote 无负边距/窄盒溢出', () => {
+test('插件底部入口对齐原生 42px 满宽行：dsh-toolbox-ui 无负边距/窄盒溢出', () => {
   const toolbox = fs.readFileSync(path.join(DESKTOP_ROOT, 'assets', 'plugins', 'dsh-toolbox-ui', 'lib', 'client.js'), 'utf8');
   assert.match(toolbox, /\.dsh-mcp-footer-action\{[^}]*inline-size:100%[^}]*height:42px[^}]*margin:0;/);
   assert.ok(!toolbox.includes('margin:0 -2px;padding:0 10px 0 8px'), 'dsh-toolbox-ui 不得再使用 -2px 负边距');
   assert.match(toolbox, /\.dsh-mcp-footer-name\{[^}]*text-box:trim-both cap alphabetic/);
-
-  for (const rel of [
-    path.join('ds-harness-remote', 'dist', 'client.js'),
-    path.join('ds-harness-remote', 'dist', 'client.github.js'),
-    path.join('ds-harness-remote', 'dist', 'client', 'shell.js'),
-  ]) {
-    const remote = fs.readFileSync(path.join(DESKTOP_ROOT, 'assets', 'plugins', rel), 'utf8');
-    assert.match(remote, /\.dshRemoteSidebarEntry\.isWide\{flex:none;inline-size:100%;min-inline-size:0;max-inline-size:100%;height:42px;margin:0\}/, rel);
-    assert.match(remote, /\.dshRemoteSidebarEntry\.isWide \.dshRemoteModeButton\{inline-size:100%;max-inline-size:100%;min-inline-size:0;height:42px;/, rel);
-    assert.match(remote, /\.dshRemoteSidebarLabel\{[^}]*text-box:trim-both cap alphabetic/, rel);
-  }
 });

@@ -791,10 +791,11 @@ CI 五个架构的 staging 同口径），装机后首次开机由 boot 的插�
 | dsh-toolbox-ui | 1.13.0 | MIT |
 | @bittersmilezzz/dsh-notify | 0.4.5 | MIT |
 | dsh-context | 0.86.0 | Apache-2.0 |
-| ds-harness-remote | 0.6.5 | MIT |
 
+> **2026-11-22 移除 `ds-harness-remote`（按用户要求）**：端到端加密远程访问插件源目录已从 `assets/plugins/` 删除，不再随包分发；许可条目随之下线。
+>
 > **2026-11-09 新增 2 个（31→33，按用户要求）**：`dsh-context`（[bowenliang123/dsh-context](https://github.com/bowenliang123/dsh-context)，Apache-2.0）、
-> `ds-harness-remote`（[liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote)，MIT，内层依赖树随包分发）。
+> `ds-harness-remote`（已于 2026-11-22 退役移除）。
 >
 > **2026-11-08 移除 3 个（34→31，按用户要求）**：`@deepseek-ai/dsh-quest-ui`（Quest 沉浸式界面，MIT）、
 > `dsh-auto-compact`（contextPressure 达阈值自动发 `/compact`，MIT）、`dsh-zcode-migrate`（zcode 历史会话 → dsh 原生会话日志，
