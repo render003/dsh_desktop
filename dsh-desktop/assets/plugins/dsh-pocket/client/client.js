@@ -1970,7 +1970,7 @@ var zh2 = {
   "restartingDetail": "\u23F3 \u6B63\u5728\u91CD\u542F\u751F\u6548\uFF08\u901A\u5E38 10-30 \u79D2\uFF09\xB7 \u5DF2\u7B49\u5F85 {s} \u79D2",
   "updatedAutoDetail": "\u2705 \u5DF2\u66F4\u65B0\uFF0C\u6B63\u5728\u81EA\u52A8\u91CD\u542F\u751F\u6548\uFF0C\u8BF7\u7A0D\u5019\u5237\u65B0",
   "updatedRestartDetail": "\u2705 \u5DF2\u66F4\u65B0\uFF0C\u91CD\u542F dsh web \u751F\u6548",
-  "updateFailed": "\u274C \u5931\u8D25\uFF1A{err}\uFF08\u624B\u52A8\u66F4\u65B0\uFF1Adsh plugin --profile web update dsh-pocket --latest -w\uFF09",
+  "updateFailed": "\u274C \u5931\u8D25\uFF1A{err}\uFF08\u624B\u52A8\u66F4\u65B0\uFF1Adsh plugin --profile web add dsh-pocket@latest\uFF09",
   "versionRange": "\u5F53\u524D v{cur} \u2192 \u6700\u65B0 v{latest}",
   "wanAccess": "\u516C\u7F51\u8BBF\u95EE",
   "pinLabel": "\u8BBF\u95EE\u5BC6\u7801",
@@ -2073,7 +2073,7 @@ var en2 = {
   "restartingDetail": "\u23F3 Restarting to apply (usually 10-30s) \xB7 {s}s elapsed",
   "updatedAutoDetail": "\u2705 Updated \u2014 auto-restarting in progress, refresh shortly",
   "updatedRestartDetail": "\u2705 Updated \u2014 restart dsh web to apply",
-  "updateFailed": "\u274C Failed: {err} (manual update: dsh plugin --profile web update dsh-pocket --latest -w)",
+  "updateFailed": "\u274C Failed: {err} (manual update: dsh plugin --profile web add dsh-pocket@latest)",
   "versionRange": "Current v{cur} \u2192 latest v{latest}",
   "wanAccess": "Public access",
   "pinLabel": "Access PIN",
@@ -2176,7 +2176,7 @@ var ja2 = {
   "restartingDetail": "\u23F3 \u53CD\u6620\u306E\u305F\u3081\u518D\u8D77\u52D5\u4E2D\uFF08\u901A\u5E38 10\u301C30 \u79D2\uFF09\xB7 {s} \u79D2\u7D4C\u904E",
   "updatedAutoDetail": "\u2705 \u66F4\u65B0\u5B8C\u4E86 \u2014 \u81EA\u52D5\u3067\u518D\u8D77\u52D5\u3057\u3066\u3044\u307E\u3059\u3002\u5C11\u3057\u5F85\u3063\u3066\u304B\u3089\u30DA\u30FC\u30B8\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044",
   "updatedRestartDetail": "\u2705 \u66F4\u65B0\u5B8C\u4E86 \u2014 dsh web \u3092\u518D\u8D77\u52D5\u3059\u308B\u3068\u53CD\u6620\u3055\u308C\u307E\u3059",
-  "updateFailed": "\u274C \u5931\u6557\uFF1A{err}\uFF08\u624B\u52D5\u66F4\u65B0\uFF1Adsh plugin --profile web update dsh-pocket --latest -w\uFF09",
+  "updateFailed": "\u274C \u5931\u6557\uFF1A{err}\uFF08\u624B\u52D5\u66F4\u65B0\uFF1Adsh plugin --profile web add dsh-pocket@latest\uFF09",
   "versionRange": "\u73FE\u5728 v{cur} \u2192 \u6700\u65B0 v{latest}",
   "wanAccess": "\u30D1\u30D6\u30EA\u30C3\u30AF\u30A2\u30AF\u30BB\u30B9",
   "pinLabel": "\u30A2\u30AF\u30BB\u30B9 PIN",
@@ -2381,8 +2381,14 @@ function PocketSettingsTab({ rpcCall, t }) {
     };
   }, [isDesktop]);
   const restartPocket = async () => {
+    /* dsh-pack:pocket-desktop-update */
     setUpdateInfo((u) => ({ ...u, restarting: true, startedAt: Date.now() }));
     try {
+      if (typeof window !== "undefined" && window.dshDesktop && typeof window.dshDesktop.restartService === "function") {
+        await window.dshDesktop.restartService();
+        setUpdateInfo((u) => ({ ...u, restarting: true, result: "ok" }));
+        return;
+      }
       await Promise.race([
         call(POCKET_ENDPOINTS.restart, {}),
         new Promise((_, rej) => setTimeout(() => rej(new Error("restart requested (no reply within 3s)")), 3e3))
@@ -2400,6 +2406,17 @@ function PocketSettingsTab({ rpcCall, t }) {
   const runUpdate = async () => {
     setUpdateInfo((u) => ({ ...u, updating: true, result: null, startedAt: Date.now() }));
     try {
+      if (typeof window !== "undefined" && window.dshDesktop && window.dshDesktop.pluginManager && typeof window.dshDesktop.pluginManager.update === "function") {
+        const r = await window.dshDesktop.pluginManager.update("dsh-pocket");
+        setUpdateInfo((u) => ({
+          ...u,
+          updating: false,
+          result: r && r.ok ? "ok" : "fail",
+          autoRestart: false,
+          output: r && r.ok ? "" : (r && r.error) || "\u66F4\u65B0\u5931\u8D25"
+        }));
+        return;
+      }
       const r = await call(POCKET_ENDPOINTS.update, {});
       setUpdateInfo((u) => ({
         ...u,

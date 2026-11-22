@@ -26,6 +26,8 @@ const UPDATE_SOURCES = Object.freeze({
   'bili-native': { kind: 'npm', pkg: 'billion-context' },
   // better-sidebar 条目保留但被排除，原因见 UPDATE_EXCLUSIONS。
   'better-sidebar': { kind: 'npm', pkg: 'dsh-better-sidebar' },
+  // 手机访问（dsh-pocket）：纳入桌面桥更新源，设置页点「更新」直接走 npm tarball + 保留内层 node_modules。
+  'dsh-pocket': { kind: 'npm', pkg: 'dsh-pocket' },
 
   // ── 2026-10-22 新增的随包插件（bot/ds-bot 已于 2026-11-22 退役移除） ──
   'web-search-free': { kind: 'npm', pkg: 'dsh-free-search' },

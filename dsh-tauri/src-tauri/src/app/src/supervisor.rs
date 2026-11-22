@@ -27,7 +27,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use kernel_process::{choose_stable_port, kill_tree, sanitized_node_command, CrashLoopDetector, ReadyLineParser, SpawnSpec};
+use kernel_process::{choose_stable_port, kill_tree, node_compile_cache_dir, sanitized_node_command, CrashLoopDetector, ReadyLineParser, SpawnSpec};
 use kernel_process::crash_loop::Verdict;
 /// 稳定落定窗口（Electron SERVICE_STABLE_MS 同语义：就绪后稳定存活此时长，
 /// 启动快照才成为「最后良好」回滚锚点）。
@@ -444,11 +444,12 @@ impl Supervisor {
                 this.run_farm_repair();
             }
             // ---- [1] sidecar boot（WSL 模式 home=UNC，Windows 侧经 UNC 写穿：
-            //      sync/patches/preflight 契约 §4.2）----
+            //      sync/patches/preflight 契约 §4.2；顺带合并 guard-snapshot boot，
+            //      省去一次独立 node.exe 冷启动）----
             this.set_state(RunState::Repair);
             let t0 = Instant::now();
-            match this.run_sidecar_boot(&tx, gen) {
-                Ok(()) => {}
+            let merged_snap = match this.run_sidecar_boot(&tx, gen) {
+                Ok(snap_id) => snap_id,
                 Err(e) => {
                     // last_error 写入必须独立作用域：enter_recovery_tx 内部的
                     // kill_kernel/state/set_state 都会再取 inner 锁，同线程持锁
@@ -463,7 +464,7 @@ impl Supervisor {
                     this.enter_recovery(&tx, "boot 链失败");
                     return;
                 }
-            }
+            };
             if this.inner.lock().unwrap_or_else(|p| p.into_inner()).generation != gen || this.inner.lock().unwrap_or_else(|p| p.into_inner()).stopping {
                 return;
             }
@@ -475,9 +476,11 @@ impl Supervisor {
             } else {
                 log_line("koffi 预检：WSL 托管模式跳过（原生模块为 WSL 内 linux 变体）");
             }
-            // ---- [1.6] 启动前快照（plugin-guard；GUARD_FILES 四文件）----
-            let boot_snap = this.guard_cli_json(&["guard-snapshot", "boot"])
-                .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(String::from));
+            // ---- [1.6] 启动前快照（优先复用 sidecar boot 合并产出的快照，缺失再回落独立调用）----
+            let boot_snap = merged_snap.or_else(|| {
+                this.guard_cli_json(&["guard-snapshot", "boot"])
+                    .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+            });
             if let Some(id) = &boot_snap {
                 log_line(&format!("守护瀑布：启动快照 {id}"));
             }
@@ -507,10 +510,10 @@ impl Supervisor {
             }
             if this.cancelled(gen) { return; }
 
-            // ---- [4] 二层：重跑 boot 链（sync 重新同步伴随插件，修复 node_modules 损坏
-            // ——自愈主力；guard 快照只含 4 个配置文件，坏文件靠 sync 覆盖）+ 体检修复
+            // ---- [4] 二层：重跑 boot 链（强制全量 sync 重新同步伴随插件，修复 node_modules
+            // 损坏——自愈主力；guard 快照只含 4 个配置文件，坏文件靠 sync 覆盖）+ 体检修复
             // + safe overlay 禁用坏插件 → 二次拉起 ----
-            if let Err(e) = this.run_sidecar_boot(&tx, gen) {
+            if let Err(e) = this.run_sidecar_boot_forced(&tx, gen) {
                 log_line(&format!("守护瀑布：二层重跑 boot 链失败：{e}"));
             }
             let repaired = this.guard_cli_json(&["guard-repair"]);
@@ -817,10 +820,24 @@ impl Supervisor {
         }
     }
 
+    /// Node 24 原生 V8 编译缓存目录（挂在 userData 下，自动随 DSH_TAURI_USERDATA 隔离）。
+    fn compile_cache_dir(&self) -> PathBuf {
+        let dir = node_compile_cache_dir(&shell_core::DshPaths::resolve().app_data);
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
     /// sidecar boot（node cli.js boot），逐步从 stderr 解析 [sidecar] 行转发。
     /// farm 实体目录去材料化（sidecar/farm-repair.js，node 侧 fs 操作）。
-    /// 失败仅日志（log_line + stderr），绝不影响 boot 链。
+    /// 先用 Rust 原生快速扫描（<1ms）：无实体化目录时直接跳过 node.exe 子进程冷启动，
+    /// 命中实体化目录再交由 farm-repair.js 完整挪开保留现场。失败仅日志，绝不影响 boot 链。
     fn run_farm_repair(&self) {
+        let home = shell_core::DshPaths::resolve().dsh_home;
+        let farm = home.join("profiles").join("node_modules");
+        let payload_nm = self.app_dir.join("node_modules");
+        if !has_materialized_farm_entry(&farm, &payload_nm) {
+            return;
+        }
         // 双布局：安装形态 app_dir=<install>/resources/dsh-desktop →
         // ../sidecar（resources/sidecar）；repo 检出 → ../dsh-tauri/sidecar。
         let installed = self.app_dir.join("..").join("sidecar").join("farm-repair.js");
@@ -836,6 +853,7 @@ impl Supervisor {
         let out = sanitized_node_command(&self.node_exe)
             .arg(&script)
             .arg(&self.app_dir)
+            .env("NODE_COMPILE_CACHE", self.compile_cache_dir())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .creation_flags_win()
@@ -851,14 +869,36 @@ impl Supervisor {
         }
     }
 
-    fn run_sidecar_boot(&self, tx: &Sender<SupervisorEvent>, _gen: u64) -> Result<(), String> {
-        let out = sanitized_node_command(&self.node_exe)
-            .arg(&self.sidecar_cli)
+    fn run_sidecar_boot(&self, tx: &Sender<SupervisorEvent>, gen: u64) -> Result<Option<String>, String> {
+        self.run_sidecar_boot_inner(tx, gen, true, false)
+    }
+
+    fn run_sidecar_boot_forced(&self, tx: &Sender<SupervisorEvent>, gen: u64) -> Result<Option<String>, String> {
+        self.run_sidecar_boot_inner(tx, gen, false, true)
+    }
+
+    fn run_sidecar_boot_inner(
+        &self,
+        tx: &Sender<SupervisorEvent>,
+        _gen: u64,
+        with_guard_snapshot: bool,
+        force_sync: bool,
+    ) -> Result<Option<String>, String> {
+        let mut cmd = sanitized_node_command(&self.node_exe);
+        cmd.arg(&self.sidecar_cli)
             .arg("boot")
             .arg("--app-dir")
             .arg(&self.app_dir)
             .args(self.sidecar_home_args())
             .env("DSH_TAURI_VERSION", env!("CARGO_PKG_VERSION"))
+            .env("NODE_COMPILE_CACHE", self.compile_cache_dir());
+        if with_guard_snapshot {
+            cmd.arg("--guard-snapshot");
+        }
+        if force_sync {
+            cmd.arg("--force-sync");
+        }
+        let out = cmd
             // GUI 进程起 console 子进程抑制终端窗（boot 是「启动后弹终端」主源，
             // 与本文件其余 node spawn 同口径——0.5.0 实测修复）。
             .creation_flags_win()
@@ -894,7 +934,7 @@ impl Supervisor {
             eprintln!("[boot] {msg}");
             return Err(msg);
         }
-        // stdout：末行 JSON {ok,totalMs,steps[]}
+        // stdout：末行 JSON {ok,totalMs,steps[],bootSnapshotId?}
         let stdout = String::from_utf8_lossy(&out.stdout);
         let line = stdout.trim_end().lines().last().unwrap_or("");
         let parsed: serde_json::Value = serde_json::from_str(line).map_err(|e| format!("sidecar 输出解析: {e}"))?;
@@ -908,7 +948,12 @@ impl Supervisor {
         if parsed.get("ok").and_then(|v| v.as_bool()) != Some(true) {
             return Err("boot 链存在失败步骤".into());
         }
-        Ok(())
+        let snap_id = parsed
+            .get("bootSnapshotId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        Ok(snap_id)
     }
 
     /// koffi 预检：失败时启用 picker-browse 降级 overlay（Electron runKoffiPreflight
@@ -1031,8 +1076,10 @@ impl Supervisor {
             // boot 时批量删 node_modules.lock 被抛 SAFE_DELETE_BULK_CONFIRM_REQUIRED）。
             let mut cmd = sanitized_node_command(&spec.node_exe);
             cmd.args(&spec.node_args).arg(&spec.bin_js).args(&spec.web_args);
-            // 监管标识（main.js childEnv 语义）。
-            cmd.env("DSH_DESKTOP_SUPERVISED", "1").env("NO_COLOR", "1");
+            // 监管标识（main.js childEnv 语义）+ Node 24 原生 V8 字节码编译缓存（二次启动省 3~6s）。
+            cmd.env("DSH_DESKTOP_SUPERVISED", "1")
+                .env("NO_COLOR", "1")
+                .env("NODE_COMPILE_CACHE", self.compile_cache_dir());
             // WinInet 系统代理桥接（0.6.3 beta.3）：国内个人用户最常见形态是
             // 「只开 Windows 系统代理」——WinInet（注册表）对 Node 完全不可见，
             // 父环境无代理变量时 beta2 白名单也无从透传 → 内核直连 googleapis
@@ -2073,10 +2120,100 @@ impl WinFlags for Command {
     }
 }
 
+/// 检测 profile fallback farm（`~/.dsh/profiles/node_modules`）里是否存在被实体化
+/// （非 symlink/junction 的真实目录）且 payload 也拥有的包。
+///
+/// 99.9% 正常启动时全为 junction/symlink，本纯 Rust 预检 <1ms 即返回 false，
+/// 直接省掉拉起 `farm-repair.js` 的一次 node.exe 冷启动；命中时仍交由
+/// `farm-repair.js` 执行完整挪开保留现场。
+fn is_real_materialized_dir(path: &std::path::Path) -> bool {
+    // read_link 对 POSIX symlink 与 Windows NTFS junction 均返回 Ok；
+    // 真实目录返回 Err 且 symlink_metadata().is_dir() 为 true。
+    if std::fs::read_link(path).is_ok() {
+        return false;
+    }
+    std::fs::symlink_metadata(path).map(|m| m.is_dir()).unwrap_or(false)
+}
+
+fn has_materialized_farm_entry(farm: &std::path::Path, payload_nm: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(farm) else {
+        return false;
+    };
+    if !payload_nm.exists() {
+        return false;
+    }
+    for ent in entries.flatten() {
+        let name = ent.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(".materialized-") {
+            continue;
+        }
+        let full = ent.path();
+        if name_str.starts_with('@') {
+            if let Ok(subs) = std::fs::read_dir(&full) {
+                for sub in subs.flatten() {
+                    let sub_name = sub.file_name();
+                    if payload_nm.join(&name).join(&sub_name).exists() && is_real_materialized_dir(&sub.path()) {
+                        return true;
+                    }
+                }
+            }
+        } else if payload_nm.join(&name).exists() && is_real_materialized_dir(&full) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn has_materialized_farm_entry_detects_real_dir_and_skips_missing_or_unrelated() {
+        let root = std::env::temp_dir().join(format!("dsh-farm-precheck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let farm = root.join("farm");
+        let payload = root.join("payload");
+        std::fs::create_dir_all(farm.join("@deepseek-ai")).unwrap();
+        std::fs::create_dir_all(payload.join("@deepseek-ai").join("dsh")).unwrap();
+        std::fs::create_dir_all(payload.join("koffi")).unwrap();
+
+        // 空 farm / 仅有 payload 不拥有的用户包 → false（跳过 node spawn）
+        std::fs::create_dir_all(farm.join("user-only-pkg")).unwrap();
+        assert!(!has_materialized_farm_entry(&farm, &payload));
+
+        // 顶层实体化目录撞 payload 包 → true
+        std::fs::create_dir_all(farm.join("koffi")).unwrap();
+        assert!(has_materialized_farm_entry(&farm, &payload));
+        std::fs::remove_dir_all(farm.join("koffi")).unwrap();
+        assert!(!has_materialized_farm_entry(&farm, &payload));
+
+        // scoped 实体化目录撞 payload 包 → true
+        std::fs::create_dir_all(farm.join("@deepseek-ai").join("dsh")).unwrap();
+        assert!(has_materialized_farm_entry(&farm, &payload));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn node_compile_cache_wired_for_kernel_and_sidecar() {
+        let src = include_str!("supervisor.rs").replace("\r\n", "\n");
+        let spawn = src
+            .split("fn spawn_kernel")
+            .nth(1)
+            .and_then(|s| s.split("/// 内核退出处理").next())
+            .expect("spawn_kernel 段");
+        assert!(spawn.contains("\"NODE_COMPILE_CACHE\""), "内核 spawn 必须注入 NODE_COMPILE_CACHE");
+        let boot = src
+            .split("fn run_sidecar_boot_inner")
+            .nth(1)
+            .and_then(|s| s.split("fn run_koffi_preflight").next())
+            .expect("run_sidecar_boot_inner 段");
+        assert!(boot.contains("\"NODE_COMPILE_CACHE\""), "sidecar boot 必须注入 NODE_COMPILE_CACHE");
+        assert!(boot.contains("\"--guard-snapshot\""), "sidecar boot 必须支持合并启动快照");
+    }
 
     /// 内核报错提取（真机形态回放，2026-08 QQ 群 ERR_INVALID_ARG_TYPE 案例）：
     /// 未处理 rejection 的原始转储——message 行 + 栈帧 + `{ code: … }` 壳。

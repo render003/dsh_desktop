@@ -157,6 +157,12 @@ pub fn sanitized_node_command(node_exe: impl Into<std::path::PathBuf>) -> std::p
     cmd
 }
 
+/// Node 24 原生 V8 字节码编译缓存目录（挂在 userData 下，按 DSH_TAURI_USERDATA /
+/// DSH_TEST_APPDATA 自动隔离，二次启动跳过数百个 ESM/CJS 模块的重复解析编译）。
+pub fn node_compile_cache_dir(app_data: &std::path::Path) -> std::path::PathBuf {
+    app_data.join("node-compile-cache")
+}
+
 impl SpawnSpec {
     pub fn new(
         node_exe: impl Into<std::path::PathBuf>,
@@ -332,5 +338,11 @@ mod tests {
         // cmd 整串原样单个 argv（不按空格拆）。
         assert_eq!(wsl_spawn_args("D", "a b c").len(), 6);
         assert_eq!(wsl_spawn_args("D", "a b c")[5], "a b c");
+    }
+
+    #[test]
+    fn node_compile_cache_dir_lives_under_app_data() {
+        let dir = node_compile_cache_dir(std::path::Path::new("/tmp/dsh-ud"));
+        assert_eq!(dir, PathBuf::from("/tmp/dsh-ud").join("node-compile-cache"));
     }
 }

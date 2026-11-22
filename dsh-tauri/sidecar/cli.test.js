@@ -78,6 +78,14 @@ test('boot：沙箱 home 五步全过并建档', { skip: !HAVE_DEPS }, (t) => {
     false,
     'boot 不得在用户 home 凭空建 .agent-presets',
   );
+  // 合并启动快照（--guard-snapshot）+ 二次热启动指纹命中：仍保持 5 步契约且返回 bootSnapshotId。
+  const r2 = cli(['boot', '--guard-snapshot'], { env: sb.env, timeout: 180_000 });
+  assert.strictEqual(r2.code, 0, `stderr: ${r2.stderr.slice(-500)}`);
+  assert.strictEqual(r2.json.ok, true, JSON.stringify(r2.json));
+  assert.deepStrictEqual(r2.json.steps.map((s) => s.name), ['repair', 'sync', 'patches', 'compat-pin', 'preflight']);
+  assert.ok(typeof r2.json.bootSnapshotId === 'string' && r2.json.bootSnapshotId.length > 0,
+    `--guard-snapshot 必须返回 bootSnapshotId: ${JSON.stringify(r2.json)}`);
+  assert.ok(r2.stderr.includes('配套插件同步指纹命中'), '二次热启动应命中同步指纹缓存');
 });
 
 test('boot 容忍分级：自愈类子失败不阻断（坏 patch → 自愈 → ok:true）', { skip: !HAVE_DEPS }, (t) => {

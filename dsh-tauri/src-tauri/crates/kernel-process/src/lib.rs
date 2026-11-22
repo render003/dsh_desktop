@@ -30,4 +30,4 @@ pub use kill_tree::kill_tree;
 pub use node_resolve::{resolve_node, NodeProbe, RealNodeProbe, ResolvedNode};
 pub use port::choose_stable_port;
 pub use ready_line::ReadyLineParser;
-pub use spawn_spec::{sanitized_node_command, SpawnSpec};
+pub use spawn_spec::{node_compile_cache_dir, sanitized_node_command, SpawnSpec};

@@ -32,11 +32,12 @@ const { resolveGithubRelease } = require('../plugin-manager-update.js');
 
 // ── 1. 表内容 ───────────────────────────────────────────────────────────────
 
-test('更新源表：7 条（2 既有 + 5 新增；2026-11-22 随 ds-bot 退役移除 bot），id/包名逐条精确', () => {
+test('更新源表：8 条（2 既有 + dsh-pocket + 5 新增；2026-11-22 随 ds-bot 退役移除 bot），id/包名逐条精确', () => {
   assert.deepEqual(Object.keys(UPDATE_SOURCES).sort(), [
     'better-sidebar',
     'bili-native',
     'dsh-notify',
+    'dsh-pocket',
     'mcp-manager-ui',
     'network-proxy',
     'shop',
@@ -48,6 +49,7 @@ test('更新源表：7 条（2 既有 + 5 新增；2026-11-22 随 ds-bot 退役�
   assert.equal(UPDATE_SOURCES['compaction-acp'], undefined, '旧件已退役，更新源不得残留');
   assert.equal(UPDATE_SOURCES.bot, undefined, 'ds-bot 已退役，更新源不得残留');
   assert.deepEqual(UPDATE_SOURCES['better-sidebar'], { kind: 'npm', pkg: 'dsh-better-sidebar' });
+  assert.deepEqual(UPDATE_SOURCES['dsh-pocket'], { kind: 'npm', pkg: 'dsh-pocket' });
 
   // 新增五条：id 是 loader id，pkg/repo 是真正取数的坐标。
   assert.deepEqual(UPDATE_SOURCES['web-search-free'], { kind: 'npm', pkg: 'dsh-free-search' });
@@ -97,7 +99,7 @@ test('selectUpdateCandidates: 过滤无源 / 已卸载 / 被排除 / 非法行�
     { id: 'bili-native' },
     { id: 'better-sidebar' },
     { id: 'web-search-free' },
-    { id: 'dsh-pocket' },          // 无更新源
+    { id: 'offpeak' },             // 无更新源
     { id: 'shop', removed: true }, // 已卸载
     { id: 'bot' },
     null,
@@ -177,7 +179,7 @@ test('plugin-core：updates.sources 与唯一表同源，排除项在 update 直
 
   const center = createPluginCenter({ getHome: () => home, getProfile: () => 'web' });
   assert.equal(center.updates.sources, UPDATE_SOURCES, '装配根不得再复制一份表');
-  assert.equal(Object.keys(center.updates.sources).length, 7);
+  assert.equal(Object.keys(center.updates.sources).length, 8);
 
   await assert.rejects(center.updates.update('better-sidebar'), (err) => {
     assert.equal(err.code, 'PLUGIN_NOT_FOUND');

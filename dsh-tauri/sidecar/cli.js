@@ -117,6 +117,7 @@ function loadModules(appDir) {
     pluginManagerPatch: req('scripts/plugin-manager-patch'),
     pluginManagerUpdate: req('scripts/plugin-manager-update'),
     pluginUpdateSources: req('scripts/lib/plugin-update-sources'),
+    pocketUpdateCompat: req('scripts/lib/pocket-update-compat'),
     companionPlugins: req('scripts/lib/companion-plugins'),
     profileReconcile: req('scripts/lib/profile-reconcile'),
     profilePatchHeal: req('profile-patch-heal'),
@@ -608,9 +609,15 @@ function createPluginManager(mods, { appDir, home }) {
     // 完整性校验（npm sha512 / github asset sha256 digest）——fail-closed。
     // GitHub archive 模式（源码 zipball）没有官方摘要：显式跳过并留日志，
     // 不用 tag/版本号冒充校验值。
-    if (info.integrity || info.digest) {
-      try { verifyIntegrity(buf, info.integrity || 'sha256:' + info.digest); }
-      catch (err) { return { ok: false, error: '完整性校验失败，拒绝安装: ' + ((err && err.message) || err) }; }
+    if (info.integrity && info.integrity.startsWith('sha512-')) {
+      if (!verifyIntegrity(buf, info.integrity)) {
+        return { ok: false, error: '完整性校验失败，拒绝安装: sha512 摘要不匹配' };
+      }
+    } else if (info.digest) {
+      const actualSha256 = require('node:crypto').createHash('sha256').update(buf).digest('hex');
+      if (actualSha256 !== String(info.digest).toLowerCase()) {
+        return { ok: false, error: '完整性校验失败，拒绝安装: sha256 摘要不匹配' };
+      }
     } else if (info.mode === 'archive') {
       log('archive 模式无摘要可校验，跳过完整性校验: ' + id + '（' + info.tag + '）');
     }
@@ -619,6 +626,8 @@ function createPluginManager(mods, { appDir, home }) {
     // 解压到临时目录（npm tgz 的包根是 package/；github zip 用 findPackageRoot 定位）。
     const osMod = require('node:os');
     const tmp = fs.mkdtempSync(path.join(osMod.tmpdir(), 'dsh-plugin-upd-'));
+    const backup = dest + '.bak-' + Date.now();
+    let moved = false;
     try {
       const zlib = require('node:zlib');
       if (info.tarball.endsWith('.tgz')) {
@@ -639,39 +648,63 @@ function createPluginManager(mods, { appDir, home }) {
       }
       const root = findPackageRoot(tmp);
       if (!root) return { ok: false, error: '归档中未找到包根' };
-      // 备份 → 替换（目录级：旧目录改 .bak-<ts>，新目录 rename 到位）。
-      const backup = dest + '.bak-' + Date.now();
-      if (fs.existsSync(dest)) fs.renameSync(dest, backup);
+      // 备份 → 替换（目录级：旧目录改 .bak-<ts>，新目录复制到位；失败回滚旧目录）。
+      if (fs.existsSync(dest)) {
+        fs.renameSync(dest, backup);
+        moved = true;
+      }
       fs.cpSync(root, dest, { recursive: true });
+      // shipsNodeModules 正件（如 dsh-pocket）：npm tarball 不含内层 node_modules，
+      // 更新包代码时继承旧目录的内层依赖树（如 qrcode），避免重启后缺依赖。
+      const spec = COMPANION_PLUGINS.find((p) => p.id === id);
+      if (spec && spec.shipsNodeModules && moved) {
+        const backupNm = path.join(backup, 'node_modules');
+        const destNm = path.join(dest, 'node_modules');
+        if (fs.existsSync(backupNm) && !fs.existsSync(destNm)) {
+          fs.cpSync(backupNm, destNm, { recursive: true });
+        }
+      }
+      // dsh-pocket 升级到上游新版后自动续打桌面端更新/重启桥接补丁，避免下次更新再报 -w。
+      if (id === 'dsh-pocket' && mods.pocketUpdateCompat && typeof mods.pocketUpdateCompat.patchPocketDir === 'function') {
+        try { mods.pocketUpdateCompat.patchPocketDir(dest); } catch (err) { log('dsh-pocket 续打适配补丁跳过: ' + err.message); }
+      }
       try { fs.rmSync(backup, { recursive: true, force: true }); } catch {}
       return { ok: true, version: info.version, restartRequired: true };
     } catch (err) {
+      if (moved && fs.existsSync(backup) && !fs.existsSync(dest)) {
+        try { fs.renameSync(backup, dest); } catch {}
+      }
       return { ok: false, error: '安装失败: ' + ((err && err.message) || err) };
     } finally {
       try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
     }
   }
 
-  /** 最小 tar.gz 解包（ustar 条目；只落普通文件，够插件包用）。 */
+  /** 最小 tar.gz 解包（ustar + prefix 条目；只落普通文件，够插件包用）。 */
   function extractTarGz(buf, outDir) {
     const tar = require('node:zlib').gunzipSync(buf);
+    const baseOut = path.resolve(outDir);
     let off = 0;
     while (off + 512 <= tar.length) {
-      const name = tar.slice(off, off + 100).toString('utf8').replace(/\0.*$/, '');
+      const rawName = tar.slice(off, off + 100).toString('utf8').replace(/\0.*$/, '');
+      const prefix = tar.slice(off + 345, off + 500).toString('utf8').replace(/\0.*$/, '');
+      const name = prefix ? prefix + '/' + rawName : rawName;
       const sizeField = tar.slice(off + 124, off + 136).toString('utf8').replace(/\0.*$/, '').trim();
       const size = parseInt(sizeField || '0', 8) || 0;
       const type = tar[off + 156];
-      if (name) {
-        const target = path.join(outDir, name.replace(/^package\//, 'package/'));
-        if (type === 0x30 || type === 0) {
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, tar.slice(off + 512, off + 512 + size));
-        } else if (type === 0x35 || name.endsWith('/')) {
-          fs.mkdirSync(target, { recursive: true });
+      if (name && type !== 0x78 && type !== 0x67) {
+        const target = path.resolve(baseOut, name);
+        if (target.startsWith(baseOut + path.sep)) {
+          if (type === 0x30 || type === 0) {
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            fs.writeFileSync(target, tar.slice(off + 512, off + 512 + size));
+          } else if (type === 0x35 || name.endsWith('/')) {
+            fs.mkdirSync(target, { recursive: true });
+          }
         }
       }
       off += 512 + Math.ceil(size / 512) * 512;
-      if (!name && size === 0 && off >= tar.length) break;
+      if (!rawName && size === 0 && off >= tar.length) break;
     }
   }
 
@@ -741,6 +774,10 @@ async function cmdBoot(args, ctx) {
       + ' home(UNC)=' + backend.wsl.uncHome
       + (backend.wsl.simulated ? '（DSH_WSL_MODE 模拟，Rust 设置页解锁前的临时缝）' : ''));
   }
+  const withGuardSnapshot = Array.isArray(args) && args.includes('--guard-snapshot');
+  if (Array.isArray(args) && args.includes('--force-sync')) {
+    process.env.DSH_SYNC_FORCE = '1';
+  }
   const t0 = Date.now();
   const steps = [];
   // 步骤成败分级（对齐 Electron main.js 容忍语义 +「客户端必须能打开」原则）：
@@ -778,25 +815,37 @@ async function cmdBoot(args, ctx) {
   ok = (await step('compat-pin', () => {
     // 兼容层 M1（v0.6.0）：kernel-pin fail-closed 校验——vendored tarball 与
     // kernel-pin.json 的精确 pin 一致性（版本混装防线；校验器随 payload 分发，
-    // 旧 payload 缺校验器时跳过不阻断）。
+    // 旧 payload 缺校验器时跳过不阻断）。进程内直接调用 run(appDir)，省去一次
+    // 独立 node 子进程冷启动开销。
     const validator = path.join(appDir, 'scripts', 'compat', 'validate-pin.js');
-    if (!require('node:fs').existsSync(validator)) {
+    if (!fs.existsSync(validator)) {
       log('compat-pin: 校验器不在位（旧 payload），跳过（非阻断）');
       return { ok: true, note: 'validator-missing' };
     }
-    const r = require('node:child_process').spawnSync(process.execPath, [validator, appDir], { encoding: 'utf8' });
-    if (r.error) throw r.error;
-    if (r.status !== 0) {
-      const out = (r.stdout || '').trim().split('\n').slice(0, 6).join(' | ');
+    const mod = require(validator);
+    const r = mod.run(appDir);
+    if (!r.ok) {
+      const out = (r.errors || []).slice(0, 6).join(' | ');
       return { ok: false, error: 'kernel-pin 与 vendored 内核不一致：' + out };
     }
-    const m = (r.stdout || '').match(/校验通过: (\S+)/);
-    return { ok: true, tag: m ? m[1] : undefined };
+    return { ok: true, tag: r.pin && r.pin.kernel ? r.pin.kernel.tag : undefined };
   })) && ok;
   ok = (await step('preflight', () => integration.preflightHealth())) && ok;
+  // 合并启动前快照（supervisor 传 --guard-snapshot 时在同进程完成，省去独立
+  // node.exe 冷启动；不改变 steps 5 步契约，失败仅日志不阻断启动）。
+  let bootSnapshotId = null;
+  if (ok && withGuardSnapshot) {
+    try {
+      const snap = makeGuard({ ...ctx, home }).snapshot('boot');
+      if (snap && snap.ok !== false && snap.id) bootSnapshotId = snap.id;
+    } catch (err) {
+      log('合并启动快照失败（不阻断，由 supervisor 回落）: ' + String((err && err.message) || err));
+    }
+  }
   // 后端观测字段（additive，supervisor 只消费 ok/steps）：WSL 生效时携带
   // distro/installDir/UNC home/agent 就绪态；回落时携带原因（设置页可展示）。
   const result = { ok, totalMs: Date.now() - t0, steps, backend: backend.backend };
+  if (bootSnapshotId) result.bootSnapshotId = bootSnapshotId;
   if (backend.wsl) {
     result.wsl = {
       distro: backend.wsl.distro,

@@ -886,6 +886,7 @@ function syncCompanionFiles(opts) {
 }
 
 module.exports = {
+  VENDOR_DEPS,
   PATCH_HEADER,
   ACP_DISABLE_BLOCK,
   ACP_SELF_DISABLE_BLOCK,

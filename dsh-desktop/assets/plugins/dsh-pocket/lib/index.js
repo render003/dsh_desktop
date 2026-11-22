@@ -233,7 +233,21 @@ function pocketRestart(service) {
 /** 执行更新：dsh plugin --profile <p> update dsh-pocket --latest -w（超时保护）。 */
 function performUpdate(profile, { timeoutMs = 180_000 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn('dsh', ['plugin', '--profile', profile, 'update', 'dsh-pocket', '--latest', '-w'], {
+    /* dsh-pack:pocket-update-args */
+    const homeDir = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+    const profileDir = join(homeDir, 'profiles', profile);
+    let hasWorkspace = false;
+    try { readFileSync(join(profileDir, 'pnpm-workspace.yaml')); hasWorkspace = true; } catch { /* 非 workspace */ }
+    let hasDep = false;
+    try {
+      const pkgJson = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'));
+      hasDep = Boolean(pkgJson?.dependencies && Object.prototype.hasOwnProperty.call(pkgJson.dependencies, 'dsh-pocket'));
+    } catch { /* 读取失败按未声明处理 */ }
+    const updateArgs = hasDep
+      ? ['plugin', '--profile', profile, 'update', 'dsh-pocket', '--latest']
+      : ['plugin', '--profile', profile, 'add', 'dsh-pocket@latest'];
+    if (hasWorkspace) updateArgs.push('-w');
+    const child = spawn('dsh', updateArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
       // Windows 上裸 spawn('dsh') 解析到无扩展名 POSIX shim → ENOENT；
       // Node 22+ 直接 spawn .cmd 会 EINVAL（CVE-2024-27980），必须走 shell（PR #54）
