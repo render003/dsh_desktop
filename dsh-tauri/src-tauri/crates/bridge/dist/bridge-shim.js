@@ -365,6 +365,8 @@
   var menuPanel = null; // 当前菜单面板（控制条子元素，自愈重注后回到关闭态）
   var menuOpen = false;
   var menuState = { appVersion: '', agentVersion: '', agentSource: '', closeToTray: true };
+  // agent 稳定版更新状态（独立于 menuState，仅内存态，每次检查/安装即时刷新）。
+  var agentUpdateState = { status: 'idle', latestVersion: '', registry: '', message: '', isError: false };
   function escHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -394,6 +396,145 @@
       return !label || label === 'main'; // metadata 缺席的旧壳兜底放行
     } catch (e) { return true; }
   }
+  function agentUpdateActionHtml() {
+    var u = agentUpdateState;
+    if (u.status === 'checking') {
+      return '<button type="button" class="dch-mh-act" disabled>检查中…</button>';
+    }
+    if (u.status === 'installing') {
+      return '<button type="button" class="dch-mh-act" disabled>更新中…</button>';
+    }
+    if (u.status === 'resetting') {
+      return '<button type="button" class="dch-mh-act" disabled>恢复中…</button>';
+    }
+    if (u.status === 'available' && u.latestVersion) {
+      return '<button type="button" class="dch-mh-act" data-accent="1" data-act="agent-install-update">更新 v' + escHtml(u.latestVersion) + '</button>';
+    }
+    return '<button type="button" class="dch-mh-act" data-act="agent-check-update">' + (u.isError ? '重试' : '检查更新') + '</button>';
+  }
+  function agentUpdateNoteHtml() {
+    var u = agentUpdateState;
+    var showReset = menuState.agentSource === 'updated' && u.status !== 'installing' && u.status !== 'resetting';
+    if (!u.message && !showReset) return '';
+    var msgCls = u.isError ? 'dch-mh-msg dch-mh-err' : (u.status === 'available' ? 'dch-mh-msg dch-mh-ok' : 'dch-mh-msg');
+    return '<div class="dch-mh-note">' +
+      (u.message ? '<span class="' + msgCls + '">' + escHtml(u.message) + '</span>' : '<span></span>') +
+      (showReset ? '<button type="button" class="dch-mh-reset" data-act="agent-reset-bundled">恢复内置</button>' : '') +
+    '</div>';
+  }
+  function runAgentCheckUpdate() {
+    if (agentUpdateState.status === 'checking' || agentUpdateState.status === 'installing' || agentUpdateState.status === 'resetting') return;
+    agentUpdateState = { status: 'checking', latestVersion: '', registry: '', message: '正在查询最新稳定版…', isError: false };
+    renderMenu();
+    dshDesktop.menu.action('agent-check-update').then(function (r) {
+      if (r && r.ok) {
+        if (r.currentVersion) menuState.agentVersion = r.currentVersion;
+        if (r.agentSource) menuState.agentSource = r.agentSource;
+        if (r.hasUpdate && r.latestVersion) {
+          agentUpdateState = {
+            status: 'available',
+            latestVersion: r.latestVersion,
+            registry: r.registry || '',
+            message: '发现稳定版 v' + r.latestVersion + '，点击更新并重启内核',
+            isError: false,
+          };
+        } else {
+          agentUpdateState = {
+            status: 'latest',
+            latestVersion: r.latestVersion || '',
+            registry: r.registry || '',
+            message: '已是最新稳定版 v' + (r.latestVersion || menuState.agentVersion || '?'),
+            isError: false,
+          };
+        }
+      } else {
+        agentUpdateState = {
+          status: 'idle',
+          latestVersion: '',
+          registry: '',
+          message: (r && r.error) ? String(r.error) : '检查更新失败',
+          isError: true,
+        };
+      }
+      renderMenu();
+    }).catch(function (e) {
+      agentUpdateState = {
+        status: 'idle',
+        latestVersion: '',
+        registry: '',
+        message: '检查更新失败：' + iconActionError(e),
+        isError: true,
+      };
+      renderMenu();
+    });
+  }
+  function runAgentInstallUpdate() {
+    if (agentUpdateState.status === 'installing' || agentUpdateState.status === 'resetting') return;
+    var ver = agentUpdateState.latestVersion || '';
+    var reg = agentUpdateState.registry || '';
+    agentUpdateState = {
+      status: 'installing',
+      latestVersion: ver,
+      registry: reg,
+      message: '正在下载并安装 v' + (ver || '稳定版') + '，完成后自动重启内核…',
+      isError: false,
+    };
+    renderMenu();
+    var payload = {};
+    if (ver) payload.version = ver;
+    if (reg) payload.registry = reg;
+    dshDesktop.menu.action('agent-install-update', payload).then(function (r) {
+      if (r && r.ok) {
+        if (r.version) menuState.agentVersion = r.version;
+        if (r.agentSource) menuState.agentSource = r.agentSource;
+        agentUpdateState = {
+          status: 'latest',
+          latestVersion: r.version || ver,
+          registry: reg,
+          message: '已更新到 v' + (r.version || ver) + '，正在重启内核…',
+          isError: false,
+        };
+        shellNotify('DSH Pack', 'Agent 已更新到 v' + (r.version || ver) + '，正在重启内核');
+      } else {
+        agentUpdateState = {
+          status: ver ? 'available' : 'idle',
+          latestVersion: ver,
+          registry: reg,
+          message: (r && r.error) ? String(r.error) : '更新失败',
+          isError: true,
+        };
+      }
+      renderMenu();
+    }).catch(function (e) {
+      agentUpdateState = {
+        status: ver ? 'available' : 'idle',
+        latestVersion: ver,
+        registry: reg,
+        message: '更新失败：' + iconActionError(e),
+        isError: true,
+      };
+      renderMenu();
+    });
+  }
+  function runAgentResetBundled() {
+    if (agentUpdateState.status === 'installing' || agentUpdateState.status === 'resetting') return;
+    agentUpdateState = { status: 'resetting', latestVersion: '', registry: '', message: '正在恢复内置版本并重启内核…', isError: false };
+    renderMenu();
+    dshDesktop.menu.action('agent-reset-bundled').then(function (r) {
+      if (r && r.ok) {
+        if (r.version) menuState.agentVersion = r.version;
+        menuState.agentSource = r.agentSource || 'bundled';
+        agentUpdateState = { status: 'idle', latestVersion: '', registry: '', message: '已恢复内置 v' + (r.version || '') + '，正在重启…', isError: false };
+        shellNotify('DSH Pack', '已恢复内置 Agent 版本，正在重启内核');
+      } else {
+        agentUpdateState = { status: 'idle', latestVersion: '', registry: '', message: '恢复内置失败', isError: true };
+      }
+      renderMenu();
+    }).catch(function (e) {
+      agentUpdateState = { status: 'idle', latestVersion: '', registry: '', message: '恢复内置失败：' + iconActionError(e), isError: true };
+      renderMenu();
+    });
+  }
   function renderMenu() {
     if (!menuPanel) return;
     var s = menuState;
@@ -401,7 +542,8 @@
     menuPanel.innerHTML =
       '<div class="dch-mh">' +
         '<div class="dch-mh-title">DSH Pack <span class="dch-mh-ver">v' + escHtml(s.appVersion || '?') + '</span></div>' +
-        '<div class="dch-mh-sub"><span>agent v' + escHtml(s.agentVersion || '未知') + '</span><span>' + escHtml(s.agentSource || 'bundled') + '</span></div>' +
+        '<div class="dch-mh-sub"><span>agent v' + escHtml(s.agentVersion || '未知') + '</span><span>' + escHtml(s.agentSource || 'bundled') + '</span>' + agentUpdateActionHtml() + '</div>' +
+        agentUpdateNoteHtml() +
       '</div>' +
       menuItemHtml('toggle-close-to-tray', '关闭时最小化到托盘', s.closeToTray ? check : '') +
       '<div class="dch-sep"></div>' +
@@ -419,8 +561,23 @@
     var items = menuPanel.querySelectorAll('button[data-act]');
     for (var i = 0; i < items.length; i++) {
       (function (el) {
-        el.onclick = function () {
+        el.onclick = function (e) {
           var act = el.getAttribute('data-act');
+          if (act === 'agent-check-update') {
+            if (e && e.stopPropagation) e.stopPropagation();
+            runAgentCheckUpdate();
+            return;
+          }
+          if (act === 'agent-install-update') {
+            if (e && e.stopPropagation) e.stopPropagation();
+            runAgentInstallUpdate();
+            return;
+          }
+          if (act === 'agent-reset-bundled') {
+            if (e && e.stopPropagation) e.stopPropagation();
+            runAgentResetBundled();
+            return;
+          }
           if (act === 'toggle-close-to-tray') {
             // 开关类：menu_action 读改写 settings.json 返回新值（单键），merge 后重渲染。
             dshDesktop.menu.action(act).then(function (next) {
@@ -668,7 +825,25 @@
         '#' + MENU_ID + ' .dch-mh{padding:8px 10px 10px;border-bottom:1px solid var(--dsw-alias-border-l2,var(--dch-line));margin-bottom:6px}' +
         '#' + MENU_ID + ' .dch-mh-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}' +
         '#' + MENU_ID + ' .dch-mh-ver{font-weight:400;color:var(--dsw-alias-label-tertiary,var(--dch-fg3))}' +
-        '#' + MENU_ID + ' .dch-mh-sub{font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dch-fg3));margin-top:3px;line-height:16px;display:flex;gap:8px;flex-wrap:wrap}' +
+        '#' + MENU_ID + ' .dch-mh-sub{font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dch-fg3));margin-top:4px;line-height:18px;display:flex;align-items:center;gap:6px;flex-wrap:nowrap}' +
+        '#' + MENU_ID + ' .dch-mh-act{margin-left:auto;width:auto;height:auto;display:inline-flex;align-items:center;justify-content:center;' +
+          'padding:2px 8px;border-radius:999px;font:inherit;font-size:10.5px;line-height:15px;white-space:nowrap;cursor:pointer;' +
+          'border:1px solid var(--dsw-alias-border-l1,var(--dch-line));background:transparent;' +
+          'color:var(--dsw-alias-label-secondary,var(--dch-fg2));transition:background .12s,color .12s,border-color .12s}' +
+        '#' + MENU_ID + ' .dch-mh-act:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover));' +
+          'color:var(--dsw-alias-label-primary,var(--dch-fg))}' +
+        '#' + MENU_ID + ' .dch-mh-act:disabled{opacity:.6;cursor:default}' +
+        '#' + MENU_ID + ' .dch-mh-act[data-accent="1"]{border-color:var(--dsw-alias-brand-primary,#4f7cff);' +
+          'background:var(--dsw-alias-brand-primary,#4f7cff);color:#fff}' +
+        '#' + MENU_ID + ' .dch-mh-act[data-accent="1"]:hover:not(:disabled){filter:brightness(1.08);color:#fff}' +
+        '#' + MENU_ID + ' .dch-mh-note{margin-top:5px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;line-height:14px}' +
+        '#' + MENU_ID + ' .dch-mh-msg{color:var(--dsw-alias-label-tertiary,var(--dch-fg3));word-break:break-word;flex:1;min-width:0}' +
+        '#' + MENU_ID + ' .dch-mh-ok{color:var(--dsw-alias-brand-primary,#4f7cff)}' +
+        '#' + MENU_ID + ' .dch-mh-err{color:var(--dsw-alias-state-error-primary,#ff7a85)}' +
+        '#' + MENU_ID + ' .dch-mh-reset{flex:none;width:auto;height:auto;display:inline-flex;align-items:center;padding:1px 5px;' +
+          'border:none;border-radius:6px;background:transparent;font:inherit;font-size:10.5px;line-height:14px;cursor:pointer;' +
+          'color:var(--dsw-alias-label-tertiary,var(--dch-fg3));text-decoration:underline;white-space:nowrap}' +
+        '#' + MENU_ID + ' .dch-mh-reset:hover{color:var(--dsw-alias-label-primary,var(--dch-fg));background:var(--dsw-alias-interactive-bg-hover,var(--dch-hover))}' +
         '#' + MENU_ID + ' .dch-item{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:5px 10px;' +
           'border:none;border-radius:8px;background:transparent;cursor:pointer;text-align:left;font:inherit;' +
           'font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-primary,var(--dch-fg,#dbe4f8))}' +

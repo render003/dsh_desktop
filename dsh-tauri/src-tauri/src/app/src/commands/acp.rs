@@ -27,7 +27,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 /// NODE_OPTIONS 泄漏——spawn_kernel 同款）+ 监管标识 + 三管道 + 抑制终端窗。
 fn acp_command(sv: &Supervisor) -> std::process::Command {
     let mut cmd = kernel_process::sanitized_node_command(&sv.node_exe);
-    cmd.arg(&sv.bin_js).arg("--profile").arg("acp");
+    cmd.arg(sv.active_agent().bin_js).arg("--profile").arg("acp");
     // 监管标识（spawn_kernel 语义：桌面监管的内核进程可被识别）。
     cmd.env("DSH_DESKTOP_SUPERVISED", "1").env("NO_COLOR", "1");
     // cwd 对齐 spawn_kernel：内核按 cwd/安装根解析 home（portable 布局一致）。
@@ -151,7 +151,7 @@ pub fn run_selftest(sv: &Supervisor) -> Result<String, String> {
 /// JSON 字符串规则转义反斜杠（Windows 绝对路径原样可用）。
 pub fn zed_config_snippet(sv: &Supervisor) -> String {
     let node = sv.node_exe.to_string_lossy().replace('\\', "\\\\");
-    let bin = sv.bin_js.to_string_lossy().replace('\\', "\\\\");
+    let bin = sv.active_agent().bin_js.to_string_lossy().replace('\\', "\\\\");
     format!(
         concat!(
             "// Zed settings.json 片段（agent_servers）——合并进 Zed 设置后重启 Zed。\n",

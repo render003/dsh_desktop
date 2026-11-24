@@ -14,11 +14,14 @@ use super::menu::setting_bool;
 #[tauri::command]
 pub fn app_init(app: AppHandle) -> Result<serde_json::Value, BridgeError> {
     let state = app.state::<AppState>();
-    let (kernel_url, phase_note, kernel_version) = {
+    let (kernel_url, phase_note, kernel_version, agent_source) = {
         let sv = state.supervisor.lock().unwrap_or_else(|p| p.into_inner()).clone();
         match sv {
-            Some(s) => (s.kernel_url(), format!("kernel={}", s.kernel_version), s.kernel_version.clone()),
-            None => (None, "supervisor 未初始化".into(), "未知".into()),
+            Some(s) => {
+                let active = s.active_agent();
+                (s.kernel_url(), format!("kernel={}", active.version), active.version, active.source)
+            }
+            None => (None, "supervisor 未初始化".into(), "未知".into(), "bundled".into()),
         }
     };
     // ⋯ 菜单面板状态（对齐 Electron chrome:init 的消费字段）：agent 版本/来源、
@@ -34,7 +37,7 @@ pub fn app_init(app: AppHandle) -> Result<serde_json::Value, BridgeError> {
         "phaseNote": phase_note,
         "platform": std::env::consts::OS,
         "agentVersion": kernel_version,
-        "agentSource": "bundled", // Tauri 版内核随客户端分发（Electron 的「内置」对应物）
+        "agentSource": agent_source,
         "closeToTray": setting_bool(&store, "closeToTray"),
     }))
 }

@@ -12,7 +12,10 @@ use tauri::{AppHandle, Manager};
 
 use crate::AppState;
 
-use super::common::{open_http_url, open_in_explorer, terr};
+use super::common::{navigate_main, open_http_url, open_in_explorer, terr, NoWindow};
+
+/// 防止并发触发多次 agent 安装/回退。
+static AGENT_MUTATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[tauri::command]
 pub async fn menu_action(action: String, payload: Option<serde_json::Value>, app: AppHandle) -> Result<serde_json::Value, BridgeError> {
@@ -95,8 +98,319 @@ pub async fn menu_action(action: String, payload: Option<serde_json::Value>, app
             super::icon::reset_custom_icon(&app)?;
             Ok(serde_json::json!({ "ok": true }))
         }
+        "agent-check-update" => {
+            let app_c = app.clone();
+            let raw = tauri::async_runtime::spawn_blocking(move || run_agent_check(&app_c))
+                .await
+                .map_err(|e| BridgeError::internal(format!("agent 检查更新线程异常：{e}")))??;
+            Ok(serde_json::json!({
+                "ok": raw.get("ok").and_then(|v| v.as_bool()).unwrap_or(false),
+                "currentVersion": raw.get("currentVersion").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                "latestVersion": raw.get("latestVersion").and_then(|v| v.as_str()).unwrap_or(""),
+                "hasUpdate": raw.get("hasUpdate").and_then(|v| v.as_bool()).unwrap_or(false),
+                "agentSource": raw.get("agentSource").and_then(|v| v.as_str()).unwrap_or("bundled"),
+                "registry": raw.get("registry").and_then(|v| v.as_str()).unwrap_or(""),
+                "error": raw.get("error").cloned().unwrap_or(serde_json::Value::Null),
+            }))
+        }
+        "agent-install-update" => {
+            let req_ver = payload
+                .as_ref()
+                .and_then(|p| p.get("version").and_then(|v| v.as_str()))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let req_reg = payload
+                .as_ref()
+                .and_then(|p| p.get("registry").and_then(|v| v.as_str()))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let app_c = app.clone();
+            let res = tauri::async_runtime::spawn_blocking(move || {
+                run_agent_install(&app_c, req_ver, req_reg)
+            })
+            .await
+            .map_err(|e| BridgeError::internal(format!("agent 安装更新线程异常：{e}")))??;
+            Ok(serde_json::json!({
+                "ok": res.ok,
+                "version": res.version,
+                "agentSource": res.agent_source,
+                "restarted": res.restarted,
+                "error": res.error,
+            }))
+        }
+        "agent-reset-bundled" => {
+            let app_c = app.clone();
+            let res = tauri::async_runtime::spawn_blocking(move || run_agent_reset_bundled(&app_c))
+                .await
+                .map_err(|e| BridgeError::internal(format!("agent 恢复内置线程异常：{e}")))??;
+            Ok(serde_json::json!({
+                "ok": res.ok,
+                "version": res.version,
+                "agentSource": res.agent_source,
+                "restarted": res.restarted,
+            }))
+        }
         other => Err(BridgeError::invalid_arg(format!("未知菜单动作：{other}"))),
     }
+}
+
+struct AgentMutateResult {
+    ok: bool,
+    version: String,
+    agent_source: String,
+    restarted: bool,
+    error: Option<String>,
+}
+
+/// 经 sidecar 执行 agent 更新类子命令（透传 WinInet 系统代理 + NODE_USE_ENV_PROXY=1）。
+fn run_agent_sidecar(sv: &crate::supervisor::Supervisor, args: &[String]) -> Result<serde_json::Value, BridgeError> {
+    let mut cmd = kernel_process::sanitized_node_command(&sv.node_exe);
+    cmd.arg(&sv.sidecar_cli)
+        .args(args)
+        .arg("--app-dir")
+        .arg(&sv.app_dir)
+        .env("DSH_TAURI_VERSION", env!("CARGO_PKG_VERSION"))
+        .env("NODE_USE_ENV_PROXY", "1");
+    for (k, v) in crate::supervisor::system_proxy_env_injection() {
+        cmd.env(k, v);
+    }
+    let out = cmd
+        .creation_flags_no_window()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(BridgeError::from)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let line = stdout.trim_end().lines().last().unwrap_or("");
+    serde_json::from_str(line).map_err(|e| {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let tail = stderr.trim().lines().last().unwrap_or("");
+        BridgeError::internal(format!("agent 更新 sidecar 输出解析失败: {e} ({tail})"))
+    })
+}
+
+fn run_agent_check(app: &AppHandle) -> Result<serde_json::Value, BridgeError> {
+    let state = app.state::<AppState>();
+    let sv = state
+        .supervisor
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .ok_or_else(|| BridgeError::internal("supervisor 未初始化"))?;
+    let active = sv.active_agent();
+    let args = vec![
+        "agent-check-update".to_string(),
+        "--current".to_string(),
+        active.version,
+        "--source".to_string(),
+        active.source,
+    ];
+    run_agent_sidecar(&sv, &args)
+}
+
+/// 原子切换 `<user_data_dir>/agent` 为已校验的暂存目录（失败时自动回滚原目录）。
+fn swap_agent_overlay(user_data_dir: &std::path::Path, staging_dir: &std::path::Path) -> Result<(), String> {
+    let name = staging_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    if !name.starts_with("agent-staging-") || staging_dir.parent() != Some(user_data_dir) {
+        return Err("非法暂存目录路径".into());
+    }
+    if !staging_dir.exists() {
+        return Err("暂存目录不存在".into());
+    }
+    let target = user_data_dir.join("agent");
+    let prev = user_data_dir.join("agent-prev");
+    if prev.exists() {
+        let _ = std::fs::remove_dir_all(&prev);
+    }
+    let had_prev = if target.exists() {
+        std::fs::rename(&target, &prev).map_err(|e| format!("备份旧 agent 覆盖层失败：{e}"))?;
+        true
+    } else {
+        false
+    };
+    if let Err(e) = std::fs::rename(staging_dir, &target) {
+        if had_prev {
+            let _ = std::fs::rename(&prev, &target);
+        }
+        return Err(format!("激活新 agent 覆盖层失败：{e}"));
+    }
+    if had_prev {
+        let _ = std::fs::remove_dir_all(&prev);
+    }
+    Ok(())
+}
+
+/// 刷新现役内核并重启 supervisor（150ms 后切主窗回 loading 页，保证当前 invoke 响应先送达）。
+fn restart_agent_kernel(app: &AppHandle, sv: &std::sync::Arc<crate::supervisor::Supervisor>) {
+    let state = app.state::<AppState>();
+    let preferred = state.last_port.load(std::sync::atomic::Ordering::Relaxed);
+    let tx = state
+        .supervisor_tx
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    match tx {
+        Some(tx) => sv.restart(tx, u16::try_from(preferred).ok()),
+        None => {
+            let (tx, _rx) = std::sync::mpsc::channel();
+            sv.restart(tx, u16::try_from(preferred).ok());
+        }
+    }
+    let loading = state.loading_url.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let app_nav = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if !loading.is_empty() {
+            let _ = navigate_main(&app_nav, &loading);
+        }
+    });
+}
+
+fn run_agent_install(
+    app: &AppHandle,
+    req_ver: Option<String>,
+    req_reg: Option<String>,
+) -> Result<AgentMutateResult, BridgeError> {
+    let Ok(_guard) = AGENT_MUTATE_LOCK.try_lock() else {
+        return Err(BridgeError::invalid_arg("已有 agent 更新任务正在进行中"));
+    };
+    let state = app.state::<AppState>();
+    let sv = state
+        .supervisor
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .ok_or_else(|| BridgeError::internal("supervisor 未初始化"))?;
+    let before = sv.active_agent();
+
+    let (target_ver, target_reg) = match req_ver {
+        Some(v) => (v, req_reg),
+        None => {
+            let check = run_agent_check(app)?;
+            if !check.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                let err = check
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("检查最新稳定版失败")
+                    .to_string();
+                return Ok(AgentMutateResult {
+                    ok: false,
+                    version: before.version,
+                    agent_source: before.source,
+                    restarted: false,
+                    error: Some(err),
+                });
+            }
+            let latest = check
+                .get("latestVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reg = req_reg.or_else(|| {
+                check
+                    .get("registry")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+            });
+            (latest, reg)
+        }
+    };
+
+    if target_ver.is_empty() {
+        return Ok(AgentMutateResult {
+            ok: false,
+            version: before.version,
+            agent_source: before.source,
+            restarted: false,
+            error: Some("未获取到有效目标版本号".into()),
+        });
+    }
+
+    let mut stage_args = vec![
+        "agent-stage-update".to_string(),
+        "--version".to_string(),
+        target_ver,
+    ];
+    if let Some(reg) = target_reg {
+        stage_args.push("--registry".to_string());
+        stage_args.push(reg);
+    }
+    let staged = run_agent_sidecar(&sv, &stage_args)?;
+    if !staged.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let err = staged
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("下载或安装失败")
+            .to_string();
+        return Ok(AgentMutateResult {
+            ok: false,
+            version: before.version,
+            agent_source: before.source,
+            restarted: false,
+            error: Some(err),
+        });
+    }
+    let staging_dir = staged
+        .get("stagingDir")
+        .and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| BridgeError::internal("暂存结果缺 stagingDir"))?;
+
+    // 停内核释放文件锁 → 原子切换覆盖层 → 刷新现役内核并重启。
+    sv.shutdown();
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    if let Err(e) = swap_agent_overlay(&state.paths.app_data, &staging_dir) {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        restart_agent_kernel(app, &sv);
+        return Ok(AgentMutateResult {
+            ok: false,
+            version: before.version,
+            agent_source: before.source,
+            restarted: true,
+            error: Some(e),
+        });
+    }
+    let active = sv.refresh_active_agent();
+    restart_agent_kernel(app, &sv);
+    Ok(AgentMutateResult {
+        ok: true,
+        version: active.version,
+        agent_source: active.source,
+        restarted: true,
+        error: None,
+    })
+}
+
+fn run_agent_reset_bundled(app: &AppHandle) -> Result<AgentMutateResult, BridgeError> {
+    let Ok(_guard) = AGENT_MUTATE_LOCK.try_lock() else {
+        return Err(BridgeError::invalid_arg("已有 agent 更新任务正在进行中"));
+    };
+    let state = app.state::<AppState>();
+    let sv = state
+        .supervisor
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .ok_or_else(|| BridgeError::internal("supervisor 未初始化"))?;
+    sv.shutdown();
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let overlay = state.paths.app_data.join("agent");
+    if overlay.exists() {
+        std::fs::remove_dir_all(&overlay).map_err(|e| BridgeError::internal(format!("删除覆盖层失败：{e}")))?;
+    }
+    let active = sv.refresh_active_agent();
+    restart_agent_kernel(app, &sv);
+    Ok(AgentMutateResult {
+        ok: true,
+        version: active.version,
+        agent_source: active.source,
+        restarted: true,
+        error: None,
+    })
 }
 
 /// 主窗句柄（⋯ 菜单动作多数作用于主窗）。
@@ -218,5 +532,36 @@ mod tests {
         ] {
             assert!(!code.contains(gone), "退役链残留在 menu.rs: {gone}");
         }
+    }
+
+    /// 原子切换 agent 覆盖层：合法 staging 生效并清旧备；越界/非法前缀被拒。
+    #[test]
+    fn swap_agent_overlay_atomic_and_rejects_escape() {
+        let base = std::env::temp_dir().join(format!("dsh-swap-agent-{}-{}", std::process::id(), line!()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        // 非法目录名被拒
+        let bad = base.join("not-staging");
+        std::fs::create_dir_all(&bad).unwrap();
+        assert!(swap_agent_overlay(&base, &bad).is_err());
+
+        // 首次激活
+        let st1 = base.join("agent-staging-1");
+        std::fs::create_dir_all(&st1).unwrap();
+        std::fs::write(st1.join("marker.txt"), "v1").unwrap();
+        swap_agent_overlay(&base, &st1).unwrap();
+        assert_eq!(std::fs::read_to_string(base.join("agent").join("marker.txt")).unwrap(), "v1");
+        assert!(!st1.exists());
+
+        // 二次覆盖（替换旧 agent 并清 agent-prev）
+        let st2 = base.join("agent-staging-2");
+        std::fs::create_dir_all(&st2).unwrap();
+        std::fs::write(st2.join("marker.txt"), "v2").unwrap();
+        swap_agent_overlay(&base, &st2).unwrap();
+        assert_eq!(std::fs::read_to_string(base.join("agent").join("marker.txt")).unwrap(), "v2");
+        assert!(!base.join("agent-prev").exists());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

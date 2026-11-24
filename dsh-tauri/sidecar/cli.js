@@ -114,6 +114,7 @@ function loadModules(appDir) {
   const req = (rel) => require(path.join(appDir, rel));
   return {
     integration: req('scripts/integration'),
+    agentUpdate: req('scripts/lib/agent-update'),
     pluginManagerPatch: req('scripts/plugin-manager-patch'),
     pluginManagerUpdate: req('scripts/plugin-manager-update'),
     pluginUpdateSources: req('scripts/lib/plugin-update-sources'),
@@ -238,11 +239,13 @@ function makeIntegration(mods, { appDir, home, userDataDir, wsl = null }) {
     loadYaml,
     loadSettings: settings.load,
     saveSettings: settings.save,
-    // WSL 模式锚点 = WSL 内 dsh 包（UNC）；本地模式 = payload 内置包
-    // （main.js dshPackageJson 同式）。
+    // WSL 模式锚点 = WSL 内 dsh 包（UNC）；本地模式 = 现役内核（覆盖层优先，否则内置）。
     getInstallAnchorDir: wsl
       ? () => findWslDshPackageDir(home)
-      : () => path.dirname(path.join(appDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')),
+      : () => {
+        const active = mods.agentUpdate.resolveActiveAgentRoot({ appDir, userDataDir });
+        return path.join(active.root, 'node_modules', '@deepseek-ai', 'dsh');
+      },
     onManifestResetRecovered: (ids) => log('manifest 重置恢复: ' + JSON.stringify(ids)),
     onHealReset: (kind, backup) => log('heal 重置(' + kind + '): ' + backup),
     hostDetectors: { openPath: () => true },
@@ -259,7 +262,10 @@ function makeGuard(c) {
   return c.mods.pluginGuard.createGuard({
     getHome: () => c.home,
     getProfile: () => 'web',
-    dshBin: () => path.join(c.appDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+    dshBin: () => {
+      const active = c.mods.agentUpdate.resolveActiveAgentRoot({ appDir: c.appDir, userDataDir: c.userDataDir });
+      return path.join(active.root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+    },
     log: (topic, msg) => process.stderr.write('[' + topic + '] ' + msg + '\n'),
   });
 }
@@ -912,6 +918,42 @@ async function main() {
     switch (cmd) {
       case 'boot': return emit(await cmdBoot(rest, ctx()));
       case 'patches-apply': return emit(await cmdPatchesApply(rest, ctx()));
+      case 'agent-check-update': {
+        const c = ctx();
+        const flagVal = (k) => { const i = rest.indexOf(k); return i >= 0 && i + 1 < rest.length ? rest[i + 1] : ''; };
+        const currentVersion = flagVal('--current');
+        const agentSource = flagVal('--source');
+        return emit(await c.mods.agentUpdate.checkAgentUpdate({
+          currentVersion: currentVersion || undefined,
+          agentSource: agentSource || undefined,
+          appDir: c.appDir,
+          userDataDir: c.userDataDir,
+        }));
+      }
+      case 'agent-stage-update': {
+        const c = ctx();
+        const flagVal = (k) => { const i = rest.indexOf(k); return i >= 0 && i + 1 < rest.length ? rest[i + 1] : ''; };
+        const targetVersion = flagVal('--version') || rest.find((a) => !a.startsWith('--')) || '';
+        const registry = flagVal('--registry') || undefined;
+        if (!targetVersion) { process.stderr.write('用法: agent-stage-update --version <ver> [--registry <url>]\n'); process.exit(2); }
+        const { applyAll } = require(path.join(c.appDir, 'scripts', 'integration', 'patch-runner'));
+        const res = await c.mods.agentUpdate.stageAgentUpdate({
+          targetVersion,
+          appDir: c.appDir,
+          userDataDir: c.userDataDir,
+          registry,
+          nodeExe: process.execPath,
+          applyPatches: (stagingDir) => applyAll({
+            home: path.join(stagingDir, '__no_home__'),
+            appDir: stagingDir,
+            userDataDir: path.join(stagingDir, '__no_ud__'),
+            wslMode: false,
+            log,
+          }),
+          log,
+        });
+        return emit(res);
+      }
       case 'plugin-list': {
         const c = ctx();
         return emit(createPluginManager(c.mods, c).collect());

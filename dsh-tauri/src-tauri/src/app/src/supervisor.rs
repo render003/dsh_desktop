@@ -93,8 +93,18 @@ pub struct Supervisor {
     pid_file: PathBuf,
 }
 
+/// 现役 agent 内核解析结果（覆盖层 `<app_data>/agent` 优先于内置 `app_dir`，
+/// 且仅在覆盖层版本严格高于内置版本时生效；新安装包内置版本 >= 覆盖层时自动切回 bundled）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveAgent {
+    pub bin_js: PathBuf,
+    pub version: String,
+    pub source: String,
+}
+
 struct Inner {
     state: RunState,
+    active_agent: ActiveAgent,
     kernel: Option<Child>,
     kernel_url: Option<String>,
     port: Option<u16>,
@@ -188,6 +198,8 @@ impl Supervisor {
             // 全缺占位：保持「spawn 报错 → 恢复页」旧错误路径存活（boot 首步
             // 的清晰错误正常先一步拦截，此处仅终防线）。
             .unwrap_or_else(|| kernel_process::node_resolve::vendor_node_exe(&app_dir));
+        let paths = shell_core::DshPaths::resolve();
+        let active_agent = resolve_active_agent(&app_dir, &paths.app_data);
         Self {
             sidecar_cli,
             node_exe,
@@ -197,6 +209,7 @@ impl Supervisor {
             app_dir,
             inner: Arc::new(Mutex::new(Inner {
                 state: RunState::Boot,
+                active_agent,
                 kernel: None,
                 kernel_url: None,
                 port: None,
@@ -215,10 +228,18 @@ impl Supervisor {
             fallback_reason: Arc::new(Mutex::new(String::new())),
             wsl_cfg,
             wsl_invoker: invoker,
-            pid_file: shell_core::DshPaths::resolve().app_data.join("kernel.pid.json"),
+            pid_file: paths.app_data.join("kernel.pid.json"),
         }
     }
 
+    pub fn active_agent(&self) -> ActiveAgent {
+        self.inner.lock().unwrap_or_else(|p| p.into_inner()).active_agent.clone()
+    }
+    pub fn refresh_active_agent(&self) -> ActiveAgent {
+        let next = resolve_active_agent(&self.app_dir, &shell_core::DshPaths::resolve().app_data);
+        self.inner.lock().unwrap_or_else(|p| p.into_inner()).active_agent = next.clone();
+        next
+    }
     pub fn state(&self) -> RunState {
         self.inner.lock().unwrap_or_else(|p| p.into_inner()).state
     }
@@ -1055,10 +1076,11 @@ impl Supervisor {
     /// 路径逐字节不变（不变量 §7.1）。
     fn spawn_kernel(self: Arc<Self>, port: u16, tx: &Sender<SupervisorEvent>) -> Result<(), String> {
         let overlays = self.inner.lock().unwrap_or_else(|p| p.into_inner()).overlays.clone();
+        let active_agent = self.active_agent();
         let wsl_backend_active = self.wsl_active();
         let wsl_mode = wsl_backend_active.is_some();
         let mut child = if let Some(backend) = &wsl_backend_active {
-            let no_open = kernel_process::semver::needs_no_open_flag(&self.kernel_version);
+            let no_open = kernel_process::semver::needs_no_open_flag(&active_agent.version);
             let cmd = backend.server_cmd(no_open);
             log_line(&format!(
                 "内核(WSL) spawn: wsl.exe -d {} -e sh -lc {}（--port 0，实际端口待就绪行）",
@@ -1068,7 +1090,7 @@ impl Supervisor {
             backend.spawn_server(no_open).map_err(|e| format!("spawn wsl.exe: {e}"))?
         } else {
             let use_system_ca = self.node_resolved.as_ref().map(|r| r.supports_use_system_ca()).unwrap_or(false);
-            let spec = SpawnSpec::new(&self.node_exe, &self.bin_js, &self.kernel_version, port, &overlays, use_system_ca);
+            let spec = SpawnSpec::new(&self.node_exe, &active_agent.bin_js, &active_agent.version, port, &overlays, use_system_ca);
             // 环境净化：env_clear + 白名单（sanitized_node_command）。macOS 启动
             // 崩溃环根治——`std::process::Command` 默认继承父进程全部环境，此前
             // 只挂白名单不 env_clear，白名单形同虚设，NODE_OPTIONS 等任意父进程
@@ -1603,7 +1625,7 @@ impl Supervisor {
         });
     }
 
-    /// 原地重启（restart_service）：杀树 → 重跑 boot 链 → 换页。
+    /// 原地重启（restart_service）：杀树 → 刷新现役内核 → 重跑 boot 链 → 换页。
     pub fn restart(self: &Arc<Self>, tx: Sender<SupervisorEvent>, preferred_port: Option<u16>) {
         {
             let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -1613,6 +1635,7 @@ impl Supervisor {
             g.crash.record_graceful_restart();
         }
         self.kill_kernel();
+        self.refresh_active_agent();
         self.spawn_boot(tx, preferred_port);
     }
 
@@ -1797,6 +1820,33 @@ fn read_kernel_version(app_dir: &std::path::Path) -> String {
         }
     }
     "unknown".into()
+}
+
+/// 解析现役 agent 内核：若 `<user_data_dir>/agent` 含完整 `bin.js` 且版本严格高于内置
+/// `app_dir` 版本，返回 `source = "updated"`；否则回落 `bundled`（新客户端自带更高
+/// 内核时自动接管，无需手动清理）。
+pub(crate) fn resolve_active_agent(app_dir: &std::path::Path, user_data_dir: &std::path::Path) -> ActiveAgent {
+    let bundled_bin = app_dir.join("node_modules").join("@deepseek-ai").join("dsh").join("lib").join("bin.js");
+    let bundled_ver = read_kernel_version(app_dir);
+    let overlay_root = user_data_dir.join("agent");
+    let overlay_bin = overlay_root.join("node_modules").join("@deepseek-ai").join("dsh").join("lib").join("bin.js");
+    let overlay_ver = read_kernel_version(&overlay_root);
+    if overlay_bin.exists() && overlay_ver != "unknown" {
+        let newer = bundled_ver == "unknown"
+            || kernel_process::semver::compare_versions(&overlay_ver, &bundled_ver) == Some(std::cmp::Ordering::Greater);
+        if newer {
+            return ActiveAgent {
+                bin_js: overlay_bin,
+                version: overlay_ver,
+                source: "updated".into(),
+            };
+        }
+    }
+    ActiveAgent {
+        bin_js: bundled_bin,
+        version: bundled_ver,
+        source: "bundled".into(),
+    }
 }
 
 fn now_ms() -> u64 {
@@ -2073,8 +2123,8 @@ fn wininet_system_proxy_url() -> Option<String> {
     None
 }
 
-/// 组合入口：spawn_kernel 注入点调用；未启用/读不到/用户已配置 → 空清单。
-fn system_proxy_env_injection() -> Vec<(String, String)> {
+/// 组合入口：spawn_kernel 与 agent 更新 sidecar 注入点调用；未启用/读不到/用户已配置 → 空清单。
+pub(crate) fn system_proxy_env_injection() -> Vec<(String, String)> {
     match wininet_system_proxy_url() {
         Some(url) => proxy_env_injection(&url, &|k| std::env::var_os(k).is_some()),
         None => Vec::new(),
@@ -2497,6 +2547,36 @@ Content-Length: 0
         assert_eq!(read_kernel_version(&bad), "unknown");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&bad);
+    }
+
+    #[test]
+    fn resolve_active_agent_prefers_newer_overlay() {
+        let base = sandbox("active-agent");
+        let app = base.join("app");
+        let ud = base.join("ud");
+        let write_pkg = |root: &std::path::Path, ver: &str, with_bin: bool| {
+            let pkg = root.join("node_modules").join("@deepseek-ai").join("dsh");
+            std::fs::create_dir_all(pkg.join("lib")).unwrap();
+            std::fs::write(pkg.join("package.json"), format!(r#"{{"version":"{ver}"}}"#)).unwrap();
+            if with_bin {
+                std::fs::write(pkg.join("lib").join("bin.js"), "// stub").unwrap();
+            }
+        };
+        write_pkg(&app, "0.2.2-rc.5", true);
+        let a0 = resolve_active_agent(&app, &ud);
+        assert_eq!(a0.source, "bundled");
+        assert_eq!(a0.version, "0.2.2-rc.5");
+        write_pkg(&ud.join("agent"), "0.2.2-rc.5", true);
+        assert_eq!(resolve_active_agent(&app, &ud).source, "bundled");
+        let _ = std::fs::remove_dir_all(ud.join("agent"));
+        write_pkg(&ud.join("agent"), "0.2.2", false);
+        assert_eq!(resolve_active_agent(&app, &ud).source, "bundled");
+        write_pkg(&ud.join("agent"), "0.2.2", true);
+        let a1 = resolve_active_agent(&app, &ud);
+        assert_eq!(a1.source, "updated");
+        assert_eq!(a1.version, "0.2.2");
+        assert!(a1.bin_js.starts_with(ud.join("agent")));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// Node 三级解析链优先级（v0.5.4 便携版修复 + node 版本适配：装机版

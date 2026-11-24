@@ -89,9 +89,9 @@ function parseRustActs() {
   return acts;
 }
 
-test('TA7-1a bridge-api.md §2.3 act 表 → menu.rs：单向差集为空（共 9 项）', () => {
+test('TA7-1a bridge-api.md §2.3 act 表 → menu.rs：单向差集为空（共 12 项）', () => {
   const md = parseMdActs();
-  assert.strictEqual(md.size, 9, `契约 act 计数（移除 about/toggle-auto-update/check-client-update/install-client-update 后为 9）: ${[...md]}`);
+  assert.strictEqual(md.size, 12, `契约 act 计数（含 agent-check-update / agent-install-update / agent-reset-bundled 共 12 项）: ${[...md]}`);
   const missing = diff(md, parseRustActs());
   assert.deepStrictEqual(missing, [], '契约有而实装缺的 act');
 });

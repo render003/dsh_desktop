@@ -363,6 +363,9 @@ mod window_chrome_tests {
             "menuItemHtml('open-browser'",
             "menuItemHtml('open-logs'",
             "menuItemHtml('quit'",
+            "data-act=\"agent-check-update\"",
+            "data-act=\"agent-install-update\"",
+            "data-act=\"agent-reset-bundled\"",
             "' data-act=\"' + act",
             "menu_action",
         ] {
