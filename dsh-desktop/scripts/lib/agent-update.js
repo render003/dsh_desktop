@@ -20,6 +20,7 @@ const { spawn } = require('node:child_process');
 const { compareVersions } = require('./versions');
 
 const AGENT_PKG = '@deepseek-ai/dsh';
+const AGENT_PROGRESS_PREFIX = '[agent-progress] ';
 const DEFAULT_REGISTRIES = [
   'https://registry.npmmirror.com',
   'https://registry.npmjs.org',
@@ -290,9 +291,13 @@ async function stageAgentUpdate({
   nodeExe = process.execPath,
   applyPatches,
   installRunner = runNpmInstall,
+  onProgress = () => {},
   log = () => {},
   env = process.env,
 }) {
+  const emitProgress = (stage, message, extra) => {
+    try { onProgress({ stage, message, version: ver, ...(extra || {}) }); } catch {}
+  };
   const ver = String(targetVersion || '').trim().replace(/^v/, '');
   if (!SAFE_STABLE_VERSION_RE.test(ver) || isAlphaVersion(ver)) {
     return { ok: false, error: '非法或非稳定版本号：' + String(targetVersion || '') };
@@ -327,6 +332,8 @@ async function stageAgentUpdate({
 
   for (const reg of registries) {
     try {
+      const hostLabel = reg.replace(/^https?:\/\//, '');
+      emitProgress('downloading', '正在下载安装 v' + ver + '（' + hostLabel + '）…', { registry: reg });
       await installRunner({ nodeExe, npmCli, stagingDir, targetVersion: ver, registry: reg, env, log });
       usedRegistry = reg;
       lastErr = null;
@@ -342,6 +349,7 @@ async function stageAgentUpdate({
     return { ok: false, error: '下载安装失败：' + String((lastErr && lastErr.message) || lastErr) };
   }
 
+  emitProgress('verifying', '正在校验安装文件…');
   const binJs = path.join(stagingDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
   const installedVer = readAgentVersion(stagingDir);
   if (!fs.existsSync(binJs) || !installedVer) {
@@ -352,6 +360,7 @@ async function stageAgentUpdate({
   // 对暂存副本预打全部桌面补丁（仅作用于 stagingDir，不触碰 appDir 与真实 ~/.dsh）。
   let patchSummary = null;
   if (typeof applyPatches === 'function') {
+    emitProgress('patching', '正在应用桌面运行时补丁…');
     try {
       const rawReport = await applyPatches(stagingDir);
       patchSummary = summarizePatchReport(rawReport);
@@ -388,6 +397,7 @@ async function stageAgentUpdate({
 
 module.exports = {
   AGENT_PKG,
+  AGENT_PROGRESS_PREFIX,
   DEFAULT_REGISTRIES,
   SAFE_STABLE_VERSION_RE,
   isAlphaVersion,

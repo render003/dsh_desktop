@@ -943,6 +943,11 @@ async function main() {
           userDataDir: c.userDataDir,
           registry,
           nodeExe: process.execPath,
+          onProgress: (ev) => {
+            try {
+              process.stderr.write(c.mods.agentUpdate.AGENT_PROGRESS_PREFIX + JSON.stringify(ev) + '\n');
+            } catch {}
+          },
           applyPatches: (stagingDir) => applyAll({
             home: path.join(stagingDir, '__no_home__'),
             appDir: stagingDir,

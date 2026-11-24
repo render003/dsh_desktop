@@ -8,7 +8,7 @@
 //!   `toggle-auto-update`）及 `about` 菜单动作于 2026-11-22 在 `custom` 分支整体裁撤。
 
 use bridge::BridgeError;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::AppState;
 
@@ -176,8 +176,33 @@ struct AgentMutateResult {
     error: Option<String>,
 }
 
-/// 经 sidecar 执行 agent 更新类子命令（透传 WinInet 系统代理 + NODE_USE_ENV_PROXY=1）。
-fn run_agent_sidecar(sv: &crate::supervisor::Supervisor, args: &[String]) -> Result<serde_json::Value, BridgeError> {
+const AGENT_PROGRESS_PREFIX: &str = "[agent-progress] ";
+
+/// 从 sidecar stderr 行提取结构化进度载荷（纯函数，便于单测）。
+fn parse_agent_progress_line(line: &str) -> Option<serde_json::Value> {
+    let raw = line.trim().strip_prefix(AGENT_PROGRESS_PREFIX)?;
+    let val: serde_json::Value = serde_json::from_str(raw).ok()?;
+    val.is_object().then_some(val)
+}
+
+fn emit_agent_progress(app: &AppHandle, stage: &str, message: &str) {
+    let _ = app.emit(
+        "agent-update-progress",
+        serde_json::json!({ "stage": stage, "message": message }),
+    );
+}
+
+/// 经 sidecar 执行 agent 更新类子命令（透传 WinInet 系统代理 + NODE_USE_ENV_PROXY=1），
+/// 若传入 `on_progress` 则实时流式消费 stderr 中的 `[agent-progress]` 行推送阶段进度。
+fn run_agent_sidecar_with_progress<F>(
+    sv: &crate::supervisor::Supervisor,
+    args: &[String],
+    mut on_progress: Option<F>,
+) -> Result<serde_json::Value, BridgeError>
+where
+    F: FnMut(serde_json::Value),
+{
+    use std::io::{BufRead, Read};
     let mut cmd = kernel_process::sanitized_node_command(&sv.node_exe);
     cmd.arg(&sv.sidecar_cli)
         .args(args)
@@ -188,19 +213,43 @@ fn run_agent_sidecar(sv: &crate::supervisor::Supervisor, args: &[String]) -> Res
     for (k, v) in crate::supervisor::system_proxy_env_injection() {
         cmd.env(k, v);
     }
-    let out = cmd
+    let mut child = cmd
         .creation_flags_no_window()
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .output()
+        .spawn()
         .map_err(BridgeError::from)?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(ref mut out) = stdout_pipe {
+            let _ = out.read_to_string(&mut buf);
+        }
+        buf
+    });
+    let mut last_err_line = String::new();
+    if let Some(err_pipe) = stderr_pipe {
+        for line in std::io::BufReader::new(err_pipe).lines().map_while(Result::ok) {
+            if let Some(payload) = parse_agent_progress_line(&line) {
+                if let Some(ref mut cb) = on_progress {
+                    cb(payload);
+                }
+            } else if !line.trim().is_empty() {
+                last_err_line = line;
+            }
+        }
+    }
+    let _ = child.wait();
+    let stdout = stdout_handle.join().unwrap_or_default();
     let line = stdout.trim_end().lines().last().unwrap_or("");
     serde_json::from_str(line).map_err(|e| {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let tail = stderr.trim().lines().last().unwrap_or("");
-        BridgeError::internal(format!("agent 更新 sidecar 输出解析失败: {e} ({tail})"))
+        BridgeError::internal(format!("agent 更新 sidecar 输出解析失败: {e} ({last_err_line})"))
     })
+}
+
+fn run_agent_sidecar(sv: &crate::supervisor::Supervisor, args: &[String]) -> Result<serde_json::Value, BridgeError> {
+    run_agent_sidecar_with_progress::<fn(serde_json::Value)>(sv, args, None)
 }
 
 fn run_agent_check(app: &AppHandle) -> Result<serde_json::Value, BridgeError> {
@@ -303,6 +352,7 @@ fn run_agent_install(
     let (target_ver, target_reg) = match req_ver {
         Some(v) => (v, req_reg),
         None => {
+            emit_agent_progress(app, "checking", "正在查询最新稳定版…");
             let check = run_agent_check(app)?;
             if !check.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                 let err = check
@@ -355,7 +405,14 @@ fn run_agent_install(
         stage_args.push("--registry".to_string());
         stage_args.push(reg);
     }
-    let staged = run_agent_sidecar(&sv, &stage_args)?;
+    let app_ev = app.clone();
+    let staged = run_agent_sidecar_with_progress(
+        &sv,
+        &stage_args,
+        Some(move |payload: serde_json::Value| {
+            let _ = app_ev.emit("agent-update-progress", payload);
+        }),
+    )?;
     if !staged.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         let err = staged
             .get("error")
@@ -386,6 +443,7 @@ fn run_agent_install(
         .ok_or_else(|| BridgeError::internal("暂存结果缺 stagingDir"))?;
 
     // 停内核释放文件锁 → 原子切换覆盖层 → 刷新现役内核/CLI shim 并重启。
+    emit_agent_progress(app, "switching", "正在停止旧内核并切换版本…");
     sv.shutdown();
     std::thread::sleep(std::time::Duration::from_millis(250));
     if let Err(e) = swap_agent_overlay(&state.paths.app_data, &staging_dir) {
@@ -402,6 +460,7 @@ fn run_agent_install(
     }
     let active = sv.refresh_active_agent();
     super::dsh_cli::ensure_dsh_cli_shim();
+    emit_agent_progress(app, "restarting", "切换完成，正在重启内核…");
     restart_agent_kernel(app, &sv);
     Ok(AgentMutateResult {
         ok: true,
@@ -593,5 +652,15 @@ mod tests {
         assert!(!base.join("agent-prev").exists());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn parse_agent_progress_line_extracts_valid_json_only() {
+        let p = parse_agent_progress_line(r#"[agent-progress] {"stage":"downloading","message":"正在下载"}"#).unwrap();
+        assert_eq!(p["stage"], "downloading");
+        assert_eq!(p["message"], "正在下载");
+        assert!(parse_agent_progress_line("[sidecar] ordinary log").is_none());
+        assert!(parse_agent_progress_line("[agent-progress] not-json").is_none());
+        assert!(parse_agent_progress_line("[agent-progress] 123").is_none());
     }
 }

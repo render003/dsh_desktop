@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn event_names_align_contract() {
-        for ev in ["window-maximized", "notification-jump"] {
+        for ev in ["window-maximized", "notification-jump", "agent-update-progress"] {
             assert!(BRIDGE_SHIM_JS.contains(ev), "事件 {ev} 缺失");
         }
         for ev in ["client-update-available", "client-update-progress"] {

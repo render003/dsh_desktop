@@ -150,11 +150,13 @@ test('stageAgentUpdate：拒绝 alpha 与非法版本；成功安装后预打补
   assert.equal(badInject.ok, false);
 
   let patchedDir = '';
+  const stages = [];
   const okRes = await stageAgentUpdate({
     targetVersion: '0.2.2',
     appDir: tmp,
     userDataDir: tmp,
     registry: 'https://registry.npmmirror.com',
+    onProgress: (ev) => stages.push(ev.stage),
     installRunner: async ({ stagingDir, targetVersion }) => {
       mkAgentTree(stagingDir, targetVersion, true);
     },
@@ -164,6 +166,7 @@ test('stageAgentUpdate：拒绝 alpha 与非法版本；成功安装后预打补
     },
   });
   assert.equal(okRes.ok, true);
+  assert.deepEqual(stages, ['downloading', 'verifying', 'patching']);
   assert.equal(okRes.version, '0.2.2');
   assert.equal(patchedDir, okRes.stagingDir);
   assert.equal(okRes.patchSummary.anchorMissing, 2);

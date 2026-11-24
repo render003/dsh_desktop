@@ -61,7 +61,7 @@
   function send(cmd, args) { call(cmd, args).catch(function () { /* fire-and-forget：失败只静默 */ }); }
 
   // ---- 事件（主进程 → 页面）----
-  var listeners = { maximize: [], jump: [] };
+  var listeners = { maximize: [], jump: [], agentProgress: [] };
   function onEvent(name, queue, map) {
     if (!INVOKE || !TRANSFORM) return;
     try {
@@ -92,6 +92,15 @@
     if (!isMainWindow()) return null;
     var id = p && typeof p.sessionId === 'string' ? p.sessionId.trim() : '';
     return id && id.length <= 256 ? Object.freeze({ sessionId: id }) : null;
+  });
+  onEvent('agent-update-progress', listeners.agentProgress, function (p) {
+    if (!isMainWindow() || !p || typeof p !== 'object') return null;
+    return { stage: String(p.stage || ''), message: String(p.message || '') };
+  });
+  listeners.agentProgress.push(function (p) {
+    if (!p || !p.message || agentUpdateState.status !== 'installing') return;
+    agentUpdateState.message = p.message;
+    if (menuOpen) renderMenu();
   });
 
   // ---- 通知跳转补发（订阅前收到的最后一次保留）----

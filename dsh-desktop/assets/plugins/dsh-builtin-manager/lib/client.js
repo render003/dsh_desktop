@@ -60,6 +60,10 @@ window.__ModuleLoader__.load({
       updateTag: "可更新",
       update: "更新",
       updating: "正在更新…",
+      updateAll: "全部更新 ({n})",
+      updatingAll: "正在更新 {done}/{total}…",
+      batchDoneOk: "批量更新完成：成功 {ok} 项 · 下次启动生效",
+      batchDoneMixed: "批量更新完成：成功 {ok} 项，失败 {fail} 项（详情见各行提示）",
       updated: "已更新到 {version} · 下次启动生效",
       updatedBare: "已更新 · 下次启动生效",
       updateFailed: "更新失败：",
@@ -111,6 +115,10 @@ window.__ModuleLoader__.load({
       updateTag: "Update available",
       update: "Update",
       updating: "Updating…",
+      updateAll: "Update all ({n})",
+      updatingAll: "Updating {done}/{total}…",
+      batchDoneOk: "Batch update done: {ok} updated · takes effect on next launch",
+      batchDoneMixed: "Batch update done: {ok} updated, {fail} failed (see row notes)",
       updated: "Updated to {version} · takes effect on next launch",
       updatedBare: "Updated · takes effect on next launch",
       updateFailed: "Update failed: ",
@@ -286,6 +294,7 @@ window.__ModuleLoader__.load({
       const [checking, setChecking] = react.useState(false);
       const [checkError, setCheckError] = react.useState("");
       const [updating, setUpdating] = react.useState({});
+      const [batchState, setBatchState] = react.useState(null);
 
       const load = react.useCallback(async () => {
         if (!bridge) { setState("no-bridge"); return; }
@@ -385,6 +394,58 @@ window.__ModuleLoader__.load({
         }
       }, [bridge, load, updates, L]);
 
+      const updatableRows = rows.filter((row) => {
+        const upd = updates[row.id];
+        return !!upd && upd.hasUpdate === true && !upd.error && row.removed !== true && row.id !== UPDATE_EXCLUDED_ID;
+      });
+
+      const runUpdateAll = react.useCallback(async () => {
+        if (!bridge) return;
+        if (typeof bridge.update !== "function") {
+          setBatchState({ finished: true, text: L.updateUnsupported, tone: "error" });
+          return;
+        }
+        const targets = updatableRows.slice();
+        if (targets.length === 0) return;
+        let okCount = 0;
+        let failCount = 0;
+        for (let i = 0; i < targets.length; i++) {
+          const row = targets[i];
+          setBatchState({ finished: false, done: i + 1, total: targets.length, text: "", tone: "muted" });
+          setUpdating((prev) => ({ ...prev, [row.id]: true }));
+          setNotes((prev) => ({ ...prev, [row.id]: { text: L.updating, tone: "muted" } }));
+          try {
+            const r = await bridge.update(row.id);
+            if (!r || r.ok === false) {
+              failCount += 1;
+              setNotes((prev) => ({ ...prev, [row.id]: {
+                text: L.updateFailed + String((r && (r.error || r.message)) || ""),
+                tone: "error"
+              } }));
+            } else {
+              okCount += 1;
+              const next = (r && r.version) || (updates[row.id] && updates[row.id].latest) || "";
+              setNotes((prev) => ({ ...prev, [row.id]: {
+                text: next ? L.updated.replace("{version}", displayVersion(next)) : L.updatedBare,
+                tone: "ok"
+              } }));
+              setUpdates((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+              setChanged((prev) => ({ ...prev, [row.id]: true }));
+            }
+          } catch (e) {
+            failCount += 1;
+            setNotes((prev) => ({ ...prev, [row.id]: { text: L.updateFailed + String((e && e.message) || e), tone: "error" } }));
+          } finally {
+            setUpdating((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+          }
+        }
+        if (okCount > 0) await load();
+        const summary = failCount === 0
+          ? L.batchDoneOk.replace("{ok}", String(okCount))
+          : L.batchDoneMixed.replace("{ok}", String(okCount)).replace("{fail}", String(failCount));
+        setBatchState({ finished: true, text: summary, tone: failCount === 0 ? "ok" : "error" });
+      }, [bridge, load, updatableRows, updates, L]);
+
       if (state === "no-bridge") {
         return jsx("section", {
           children: jsx("p", { style: { fontSize: 12, opacity: .75 }, children: L.noBridge }, "msg")
@@ -400,7 +461,8 @@ window.__ModuleLoader__.load({
         return [row.name, row.id, row.description, aliasOf(row)].some((v) => String(v || "").toLowerCase().indexOf(q) !== -1);
       });
       const enabledCount = rows.filter((r) => r.enabled === true).length;
-      const anyBusy = Object.keys(busy).length > 0 || Object.keys(updating).length > 0;
+      const batchRunning = !!(batchState && batchState.finished === false);
+      const anyBusy = Object.keys(busy).length > 0 || Object.keys(updating).length > 0 || batchRunning;
       const filterOptions = [
         { value: "all", label: L.filterAll.replace("{n}", String(rows.length)) },
         { value: "on", label: L.filterOn.replace("{n}", String(enabledCount)) },
@@ -437,6 +499,16 @@ window.__ModuleLoader__.load({
                 onClick: check,
                 children: checking ? L.checking : L.checkUpdates
               }, "check-updates"),
+              (updatableRows.length >= 2 || batchRunning) ? jsx(Button, {
+                variant: "secondary",
+                size: "sm",
+                disabled: state !== "ready" || checking || anyBusy,
+                title: L.updateAll.replace("{n}", String(updatableRows.length)),
+                onClick: runUpdateAll,
+                children: batchRunning
+                  ? L.updatingAll.replace("{done}", String(batchState.done)).replace("{total}", String(batchState.total))
+                  : L.updateAll.replace("{n}", String(updatableRows.length))
+              }, "update-all") : null,
               jsx(Button, {
                 variant: "ghost",
                 size: "sm",
@@ -450,6 +522,7 @@ window.__ModuleLoader__.load({
           }, "toolbar"),
           state === "failed" ? note(L.loadFailed + loadError, "error") : null,
           state === "ready" && checkError !== "" ? note(L.checkFailed + checkError, "error") : null,
+          state === "ready" && batchState && batchState.text ? note(batchState.text, batchState.tone) : null,
           state === "empty" ? note(L.empty, "muted") : null,
           state === "ready" ? jsxs("div", {
             style: S.filterRow,

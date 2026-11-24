@@ -862,3 +862,46 @@ test('中文别名展示与搜索：dsh-context 展示「上下文洞察」且�
   assert.equal(cards(tree).length, 1, '搜「上下文洞察」应精准命中 dsh-context');
   assert.equal(cards(tree)[0].props['data-plugin-id'], 'dsh-context');
 });
+
+test('一键更新全部：可更新项 >= 2 时显示按钮，串行更新并汇总成功/失败计数', async () => {
+  const updatedIds = [];
+  let versions = { 'dsh-pocket': '2.13.1', 'dsh-context': '0.86.0', 'shop': '0.9.4' };
+  const bridge = {
+    list: async () => ([
+      row({ id: 'dsh-pocket', name: 'dsh-pocket', version: versions['dsh-pocket'] }),
+      row({ id: 'dsh-context', name: 'dsh-context', version: versions['dsh-context'] }),
+      row({ id: 'shop', name: 'dsh-plugin-shop', version: versions['shop'] })
+    ]),
+    setEnabled: async () => ({ ok: true }),
+    checkUpdates: async () => ({
+      ok: true,
+      items: [
+        { id: 'dsh-pocket', latest: '2.14.0', hasUpdate: true },
+        { id: 'dsh-context', latest: '0.87.0', hasUpdate: true },
+        { id: 'shop', latest: '0.9.4', hasUpdate: false }
+      ]
+    }),
+    update: async (id) => {
+      updatedIds.push(id);
+      if (id === 'dsh-context') return { ok: false, error: '镜像超时' };
+      versions[id] = '2.14.0';
+      return { ok: true, version: '2.14.0', restartRequired: true };
+    }
+  };
+  const { Component } = loadPanel({ dshDesktop: { pluginManager: bridge } });
+  const mounter = createMounter(Component, {});
+  let tree = await mounter.settle();
+  assert.equal(buttonsWithText(tree, '全部更新').length, 0, '检查前不应显示全部更新按钮');
+
+  await buttonsWithText(tree, '检查更新')[0].props.onClick();
+  tree = await mounter.settle();
+  const batchBtns = buttonsWithText(tree, '全部更新 (2)');
+  assert.equal(batchBtns.length, 1, '可更新项为 2 时应显示「全部更新 (2)」');
+
+  await batchBtns[0].props.onClick();
+  tree = await mounter.settle();
+  assert.deepEqual(updatedIds, ['dsh-pocket', 'dsh-context'], '应串行逐项更新所有可更新项');
+  assert.match(textAll(tree), /批量更新完成：成功 1 项，失败 1 项/, '应汇总成功与失败计数');
+  assert.match(textAll(cardOf(tree, 'dsh-pocket')), /v2\.14\.0/, '成功项版本号应刷新');
+  assert.match(textAll(cardOf(tree, 'dsh-context')), /镜像超时/, '失败项行内保留错误原文');
+});

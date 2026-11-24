@@ -16,7 +16,7 @@
 | `dsh:xxx-yyy`（invoke） | `xxx_yyy` | 前缀 `dsh:` 去除 |
 | `float:close`（send） | `float_close` | fire-and-forget command，返回值固定 `Ok(())`（`pet:*` 三条 send 通道已随 harness-pet 裁撤，见 §2.4） |
 | `guard:action` | `guard_action` | 插件保护中心交互面（status/check/incident/resolve-incident 分发；写动作仍走守护瀑布自动面） |
-| 事件 `dsh:notification-jump` / `chrome:maximized` | event `notification-jump` / `window-maximized` | 冒号统一转连字符（事件 `dsh:balance` → `balance-changed` 已随 Electron 余额线退役，见 §2.4）。`notification-jump` 壳层 2026-10-22 起不再发射（通知改由内置插件 dsh-notify 发送），映射保留供垫片兼容 |
+| 事件 `dsh:notification-jump` / `chrome:maximized` | event `notification-jump` / `window-maximized` / `agent-update-progress` | 冒号统一转连字符（事件 `dsh:balance` → `balance-changed` 已随 Electron 余额线退役，见 §2.4）。`notification-jump` 壳层 2026-10-22 起不再发射（通知改由内置插件 dsh-notify 发送），映射保留供垫片兼容；`agent-update-progress` 用于向菜单推送 Agent 热更新阶段进度 `{stage, message}` |
 
 ## 2. 全量映射表（38 通道：36 保留自 main.js 提取面 + 2 Tauri 原生新增，见 §2.2）
 
