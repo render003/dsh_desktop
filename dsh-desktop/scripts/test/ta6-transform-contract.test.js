@@ -179,9 +179,9 @@ for (const spec of fileSpecs) {
 // 47 = 45 ＋ onboarding-step-progress-timeout ＋ onboarding-guard-report
 //   （2026-10-14 首启引导「点击开始设置没反应」两条，靶
 //   dsh-client-ui-settings-account/lib/client.js 同在离线内核闭包内）。
-// 53 = 48 ＋ ds-empty-thinking-strip ＋ sidebar-footer-layout ＋ sidebar-direct-settings ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22）。
-test('契约面完整性：53 个 file transform 全部被本文件覆盖', () => {
-  assert.equal(fileSpecs.length, 53);
+// 54 = 48 ＋ ds-empty-thinking-strip ＋ pi-ai-empty-thinking-strip ＋ sidebar-footer-layout ＋ sidebar-direct-settings ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22）。
+test('契约面完整性：54 个 file transform 全部被本文件覆盖', () => {
+  assert.equal(fileSpecs.length, 54);
 });
 
 // 反「静默停摆」哨兵：诚实跳过集合必须恰为已知的 5 条非 vendored 目标——

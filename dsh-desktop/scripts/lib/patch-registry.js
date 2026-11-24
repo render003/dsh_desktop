@@ -173,6 +173,7 @@ const {
   transformPiAiQuotaNotRetryable,
   transformDsToolSchemaSanitize,
   transformDsEmptyThinkingStrip,
+  transformPiAiEmptyThinkingStrip,
   transformSkillDirsCompat,
   // 选择工作文件夹时 chip/输入框闪回「选择工作区」（workspace 投影缺口帧）。
   transformWorkspaceChipLabelHold,
@@ -215,6 +216,7 @@ const {
   PI_AI_TOOL_SCHEMA_SANITIZE_MARKER,
   DS_TOOL_SCHEMA_SANITIZE_MARKER,
   DS_EMPTY_THINKING_STRIP_MARKER,
+  PI_AI_EMPTY_THINKING_STRIP_MARKER,
   PI_AI_RESPONSES_TOOL_NAME_SANITIZE_MARKER,
   PI_AI_TOOL_NAME_WIRE_MARKER,
   PI_AI_QUOTA_NOT_RETRYABLE_MARKER,
@@ -1516,6 +1518,34 @@ const PATCH_SPECS = [
       alreadyLog: alreadySkip,
       doneLog: (file) => '已注入 ds 适配器空 <thinking> 入站流过滤与出站回放清理到 ' + file,
       failLog: (file, err) => 'ds 空思考标签拦截补丁失败(' + file + '): ' + err.message,
+    },
+  },
+  // -------------------------------------------------------------------------
+  // dsh-llm-pi-ai 空思考标签拦截补丁（pi-ai-empty-thinking-strip）：
+  // 自定义网关（如 sub2api / OpenAI Responses / 第三方兼容端点）经由
+  // @deepseek-ai/dsh-llm-pi-ai 转发，与官方路由同样会出现空 `<thinking> </thinking>`
+  // 泄入正文块并触发长会话复读。双端治理：入站 toStreamChunks 前缀过滤并同步维护
+  // replayState 1:1 对齐；出站 foreignAssistant / replayedAssistant 剥离历史空标签。
+  // cli:true。
+  // -------------------------------------------------------------------------
+  {
+    id: 'pi-ai-empty-thinking-strip',
+    group: 'runtime',
+    order: 343,
+    kind: 'file',
+    layout: 'runtime-local-nm',
+    wslLayout: 'runtime-local-nm',
+    pkgRel: DSH_LLM_PIAI_PKG_REL,
+    transform: transformPiAiEmptyThinkingStrip,
+    marker: PI_AI_EMPTY_THINKING_STRIP_MARKER,
+    requires: [],
+    failPolicy: 'warn',
+    cli: true,
+    logs: {
+      prefix: 'pi-ai 空思考标签拦截补丁',
+      alreadyLog: alreadySkip,
+      doneLog: (file) => '已注入 pi-ai 适配器空 <thinking> 入站流过滤与出站回放清理到 ' + file,
+      failLog: (file, err) => 'pi-ai 空思考标签拦截补丁失败(' + file + '): ' + err.message,
     },
   },
 

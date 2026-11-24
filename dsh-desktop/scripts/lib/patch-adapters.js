@@ -2575,6 +2575,7 @@ const { transformPiAiToolNameWire, MARKER: PI_AI_TOOL_NAME_WIRE_MARKER } = requi
 const { transformPiAiQuotaNotRetryable, MARKER: PI_AI_QUOTA_NOT_RETRYABLE_MARKER } = require('../patch-pi-ai-quota-not-retryable');
 const { transformDsToolSchemaSanitize, MARKER: DS_TOOL_SCHEMA_SANITIZE_MARKER } = require('../patch-ds-tool-schema-sanitize');
 const { transformDsEmptyThinkingStrip, MARKER: DS_EMPTY_THINKING_STRIP_MARKER } = require('../patch-ds-empty-thinking-strip');
+const { transformPiAiEmptyThinkingStrip, MARKER: PI_AI_EMPTY_THINKING_STRIP_MARKER } = require('../patch-pi-ai-empty-thinking-strip');
 
 // ---------------------------------------------------------------------------
 // 跨版本 session 日志未知事件类型兜底（0.6.3 第二案；用户降级/换装后老对话
@@ -2724,6 +2725,8 @@ module.exports = {
   transformDsToolSchemaSanitize,
   DS_EMPTY_THINKING_STRIP_MARKER,
   transformDsEmptyThinkingStrip,
+  PI_AI_EMPTY_THINKING_STRIP_MARKER,
+  transformPiAiEmptyThinkingStrip,
   transformFlashFix,
   transformPersistenceAll,
   transformReleasedV0KeysTolerance,
@@ -2818,6 +2821,7 @@ module.exports = {
   markers: {
   DS_TOOL_SCHEMA_SANITIZE_MARKER,
   DS_EMPTY_THINKING_STRIP_MARKER,
+  PI_AI_EMPTY_THINKING_STRIP_MARKER,
   PI_AI_TOOL_SCHEMA_SANITIZE_MARKER,
   PI_AI_RESPONSES_TOOL_NAME_SANITIZE_MARKER,
   PI_AI_TOOL_NAME_WIRE_MARKER,

@@ -108,7 +108,8 @@ test('A. file spec transform 均为函数且来自收口导出（无内联孤儿
   // 直接在底部放置「设置」按钮）。
   // 53 = 51 ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22，custom 分支新增：移除反馈功能
   // 并在底部工作台增加终端 tab）。
-  assert.equal(fileSpecs.length, 53, `file spec 应有 53 个，得 ${fileSpecs.length}`);
+  // 54 = 53 ＋ pi-ai-empty-thinking-strip（2026-11-22，custom 分支新增：覆盖 pi-ai 路由空思考标签拦截）。
+  assert.equal(fileSpecs.length, 54, `file spec 应有 54 个，得 ${fileSpecs.length}`);
   for (const spec of fileSpecs) {
     assert.equal(typeof spec.transform, 'function', `${spec.id} 缺 transform`);
     assert.ok(
@@ -273,7 +274,8 @@ test('E. order 全局唯一、组内升序、补丁间依赖序成立', () => {
   // 62 = 61 ＋ sidebar-footer-layout（order 404，cli:false）：左侧栏底部动作区纵向堆叠布局修复。
   // 63 = 62 ＋ sidebar-direct-settings（order 405，cli:false）：移除侧栏底部更多/意见反馈/登录菜单并直接放置设置按钮。
   // 65 = 63 ＋ remove-feedback-ui（order 406）＋ sidebar-bottom-terminal（order 407）：移除反馈功能 + 底部面板终端。
-  assert.equal(PATCH_SPECS.length, 65, 'spec 总数应为 65');
+  // 66 = 65 ＋ pi-ai-empty-thinking-strip（order 343，cli:true）：覆盖 pi-ai 路由空思考标签拦截。
+  assert.equal(PATCH_SPECS.length, 66, 'spec 总数应为 66');
   const orders = PATCH_SPECS.map((s) => s.order);
   assert.equal(new Set(orders).size, orders.length, 'order 必须全局唯一');
   const byId = Object.fromEntries(PATCH_SPECS.map((s) => [s.id, s]));
@@ -325,8 +327,10 @@ test('E3. device-auth 154 与 credentials-absent 153 相邻无干扰', () => {
   );
 });
 
-test('F. cli:true 恰为 26 项；failPolicy ∈ {warn,degrade}', () => {
+test('F. cli:true 恰为 27 项；failPolicy ∈ {warn,degrade}', () => {
   const cliSpecs = registry.getSpecsByCli();
+  // 27 = 26 ＋ pi-ai-empty-thinking-strip（2026-11-22，custom 分支新增：拦截 pi-ai 路由
+  // 正文通道泄漏的纯空 <thinking>/<think> 标签，需进 payload 故 cli:true）。
   // 26 = 25 ＋ ds-empty-thinking-strip（2026-11-22，custom 分支新增：拦截 DeepSeek Messages
   // 正文通道泄漏的纯空 <thinking>/<think> 标签，需进 payload 故 cli:true）。
   // 25 = 26 − agent-loop-scheduler-guard（0.2.2-rc.1 退役：TOOL_RUNTIME_SCHEDULER
@@ -337,7 +341,7 @@ test('F. cli:true 恰为 26 项；failPolicy ∈ {warn,degrade}', () => {
   // 25 = 26（更早基线）− pi-ai-opencode-go-models（0.2.1-rc.1 退役，见 E）；
   // 26 = 28（再上一基线）− atomic-write-orphan-lock − model-image-input（两条 rc.2 退役，
   // 见 E 的①–⑥）；token-meter-clamp / preset-seat-fix 早在 0.1.5-rc.1 同批退役。
-  assert.equal(cliSpecs.length, 26, 'cli:true 数量（含 ds-empty-thinking-strip + skill-dirs-compat + pi-ai-4xx-dump + workspace-chip-label-hold + pi-ai Responses 工具名净化 + pi-ai 工具名 wire 中央收口 + pi-ai 配额耗尽不重试 + appboot-bootstrap-singleton）');
+  assert.equal(cliSpecs.length, 27, 'cli:true 数量（含 ds/pi-ai-empty-thinking-strip + skill-dirs-compat + pi-ai-4xx-dump + workspace-chip-label-hold + pi-ai Responses 工具名净化 + pi-ai 工具名 wire 中央收口 + pi-ai 配额耗尽不重试 + appboot-bootstrap-singleton）');
   for (const s of cliSpecs) assert.equal(s.cli, true);
   for (const spec of PATCH_SPECS) {
     assert.ok(

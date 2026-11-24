@@ -92,8 +92,8 @@ test('boot 链一条龙：applyAll(60) → composition-integrity → preflight �
   // + 2 项首启引导 + 1 项取代新增（profile-patch-layer-guard）− pi-ai-opencode-go-models。
   // 逐项理由见 ta6-registry-invariants 的 E，逐补丁在 pristine 闭包上的判定见 ta6-baseline-matrix。
   const r1 = applyAll(ctx);
-  assert.equal(r1.total, 65, `注册表应有 65 个补丁（实际 ${r1.total}）`);
-  assert.equal(PATCH_SPECS.length, 65, 'PATCH_SPECS 与编排 total 一致');
+  assert.equal(r1.total, 66, `注册表应有 66 个补丁（实际 ${r1.total}）`);
+  assert.equal(PATCH_SPECS.length, 66, 'PATCH_SPECS 与编排 total 一致');
   assert.ok(r1.changed > 0, `pristine 源一遍必须有写入（实际 changed=${r1.changed}）`);
   assert.deepEqual(r1.errors, [], `一遍不得有 errors：${JSON.stringify(r1.errors)}`);
   // degrade/fatal 档补丁的 anchor-missing 分流进 degraded（设计语义：降级告警
@@ -142,7 +142,7 @@ test('boot 链一条龙：applyAll(60) → composition-integrity → preflight �
   const r2 = applyAll(ctx);
   // total = 处理的 spec 数（含 target-absent，applyAll 内每 spec 无条件 +1），
   // 与一遍同源必相等，均等于 PATCH_SPECS.length；二遍只是 changed 归零。
-  assert.equal(r2.total, 65, `二遍 total 应与一遍一致（实际 ${r2.total}）`);
+  assert.equal(r2.total, 66, `二遍 total 应与一遍一致（实际 ${r2.total}）`);
   assert.deepEqual(r2.errors, [], `二遍不得有 errors：${JSON.stringify(r2.errors)}`);
   assert.equal(r2.changed, 0, `二遍应幂等（一遍 changed=${changedFirst}，二遍 changed=${r2.changed}）`);
 

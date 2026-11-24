@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-22T10:41:46.115Z",
+  "generatedAt": "2026-11-22T13:30:26.939Z",
   "kernelRoot": "@deepseek-ai",
-  "markerCount": 92,
+  "markerCount": 93,
   "surface": [
     {
       "file": "cordis-plugin-loader/lib/index.js",
@@ -347,7 +347,7 @@
     },
     {
       "file": "dsh-llm-deepseek/lib/index.js",
-      "sha256": "970ef6301d53d2c3",
+      "sha256": "483a7030ebf1dd5e",
       "markers": [
         "device-auth guidance",
         "ds empty thinking strip",
@@ -356,9 +356,10 @@
     },
     {
       "file": "dsh-llm-pi-ai/lib/index.js",
-      "sha256": "f59d8e8f35d59c03",
+      "sha256": "a580a8e3dc93efe7",
       "markers": [
         "hand-declared reasoning defaults",
+        "pi-ai empty thinking strip",
         "pi-ai tool name wire",
         "the profile"
       ]

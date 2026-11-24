@@ -99,6 +99,7 @@ const MULTI_SITE = new Set([
   'pi-ai-responses-tool-name-sanitize', // 六点注入：出站 grammar/function 分支 + 回放两处 + 入站两处槽位
   'pi-ai-tool-name-wire', // 三点注入：toolsOf 出站洗名 + 回程两处 case "tool-call" 还原
   'ds-empty-thinking-strip', // 多点注入：helper + assistant 回放清理 + translate 入站流过滤与 replayState 对齐
+  'pi-ai-empty-thinking-strip', // 多点注入：helper + foreign/replayedAssistant 回放清理 + toStreamChunks 入站流过滤与 replayState 对齐
   'sidebar-bottom-terminal', // 双站点：retainTabs 合并 bottomTabs + betterSidebar 注册底部终端 tab
 ]);
 
@@ -161,8 +162,10 @@ const EXPECTED_NON_VENDORED = [
 // 在离线闭包内，带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
 // 53 = 51 ＋ remove-feedback-ui ＋ sidebar-bottom-terminal（2026-11-22，custom 分支新增）：
 // 靶在离线闭包内，均带 FROM/TO 常量对与 marker，回滚 = npm ci 即 pristine。
-test('审计 1：分类覆盖全部 53 个 file transform（无回滚盲区）', () => {
-  assert.equal(fileSpecs.length, 53);
+// 54 = 53 ＋ pi-ai-empty-thinking-strip（2026-11-22，custom 分支新增）：
+// 靶 dsh-llm-pi-ai/lib/index.js 在离线闭包内，带 marker，回滚 = npm ci 即 pristine。
+test('审计 1：分类覆盖全部 54 个 file transform（无回滚盲区）', () => {
+  assert.equal(fileSpecs.length, 54);
   const report = [];
   for (const spec of fileSpecs) {
     const pair = INVERSE_PAIR_HINTS[spec.id];
