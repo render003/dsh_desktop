@@ -233,6 +233,7 @@ pub const RECOVERY_HTML: &str = r#"<!doctype html>
     <button onclick="doReload()">重新加载</button>
     <button onclick="doLogs()">打开日志</button>
             <button onclick="doSafeMode()" title="禁用全部伴随插件后重进（保留内置插件管理页），用于插件装崩后进不去客户端">以安全模式重启</button>
+            <button id="btnResetAgent" style="display:none" onclick="doResetAgent()" title="删除热更新的 Agent 覆盖层并恢复随包内置版本">回退内置 Agent</button>
   </div>
 </main>
 <script>
@@ -245,6 +246,8 @@ pub const RECOVERY_HTML: &str = r#"<!doctype html>
         (s && s.reason ? '原因：' + s.reason + '\n' : '') +
         (s && s.crashes ? '本次累计异常退出：' + s.crashes + ' 次\n' : '') +
         '可尝试重启内核；若反复失败请导出日志反馈。';
+      var rb = document.getElementById('btnResetAgent');
+      if (rb) rb.style.display = (s && s.agentSource === 'updated') ? '' : 'none';
     }).catch(function(e){
       document.getElementById('why').textContent = '状态读取失败：' + String(e && e.message || e);
     });
@@ -255,6 +258,7 @@ pub const RECOVERY_HTML: &str = r#"<!doctype html>
         // 安全模式：壳先写 DSH_HOME/safe-mode.flag 再重启 boot 链；成功会换到
         // loading 页（本页随之销毁），失败留在本页并刷新状态。
         window.doSafeMode = function(){ B && B.recovery.safeMode().then(function(){}, refresh); };
+        window.doResetAgent = function(){ B && B.menu && B.menu.action('agent-reset-bundled').then(function(){}, refresh); };
   refresh();
 })();
 </script>

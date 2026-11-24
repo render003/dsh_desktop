@@ -59,6 +59,7 @@
 | `open-logs` | 打开日志目录（explorer） | `null`（委托 open_in_explorer，无返回体） |
 | `open-browser` | 系统浏览器打开 `payload.url`（缺省用当前内核地址） | `null`（委托 open_http_url，无返回体） |
 | `reload` | 主窗当前页软重载（Electron reloadMainWindow 语义） | `null` |
+| `restart-kernel` | 原地重启内核服务并回 loading 页等待重新就绪（复用 supervisor `restart`） | `{ok, restarted}` |
 | `devtools` | 开 DevTools（仅 debug 构建；release 返回 `{ok:false}`） | `{ok}` |
 | `fullscreen` | 全屏切换 | `{fullscreen}` |
 | `quit` | 退出应用（托盘「退出」同语义：先杀内核树再 exit） | `null` |
@@ -66,7 +67,7 @@
 | `set-custom-icon` | 设置自定义桌面客户端图标（`payload.dataUrl` 为 PNG/ICO base64 data URL；壳侧魔数白名单校验+解码、落 app_data 副本、`WebviewWindow::set_icon` + `TrayIcon::set_icon` 同步主窗+托盘；重启后重放） | `{ok, format}` |
 | `reset-custom-icon` | 恢复默认桌面客户端图标（删除自定义图标副本，恢复 `default_window_icon` 到主窗+托盘） | `{ok}` |
 | `agent-check-update` | 检查 `@deepseek-ai/dsh` 最新稳定版（经 sidecar 双源查询 npm `latest` 并跳过 alpha，与当前版本比较） | `{ok, currentVersion, latestVersion, hasUpdate, agentSource, registry, error}` |
-| `agent-install-update` | 下载安装目标稳定版 `@deepseek-ai/dsh` 到独立覆盖层（`<userData>/agent`）、预打全部运行时补丁并重启内核 | `{ok, version, agentSource, restarted, error}` |
+| `agent-install-update` | 下载安装目标稳定版 `@deepseek-ai/dsh` 到独立覆盖层（`<userData>/agent`）、预打全部运行时补丁并重启内核 | `{ok, version, agentSource, restarted, patchWarning, error}` |
 | `agent-reset-bundled` | 删除 `<userData>/agent` 覆盖层，恢复随客户端内置的 `bundled` 内核并重启 | `{ok, version, agentSource, restarted}` |
 
 ### 2.4 `wsl`（WSL 后端配置，3 项）

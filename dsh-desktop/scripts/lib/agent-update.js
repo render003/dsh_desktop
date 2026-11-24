@@ -198,6 +198,32 @@ function findVendorNpmCli(appDir) {
   return fs.existsSync(cli) ? cli : '';
 }
 
+/**
+ * 规整 applyAll() 返回的补丁报告，产出前端可直接消费的摘要与失配告警文案（纯函数）。
+ */
+function summarizePatchReport(report) {
+  if (!report || typeof report !== 'object') return null;
+  const total = Number(report.total || 0);
+  const changed = Number(report.changed || 0);
+  const anchorMissing = Number(report.anchorMissing || 0);
+  const degradedIds = Array.isArray(report.degraded) ? report.degraded.map(String) : [];
+  const errorIds = Array.isArray(report.errors) ? report.errors.map(String) : [];
+  const failed = Number(report.failed || 0) + errorIds.length;
+  const parts = [];
+  if (anchorMissing > 0) parts.push(anchorMissing + ' 项补丁锚点失配');
+  if (degradedIds.length > 0) parts.push(degradedIds.length + ' 项降级(' + degradedIds.join(',') + ')');
+  if (failed > 0) parts.push(failed + ' 项执行失败');
+  return {
+    total,
+    changed,
+    anchorMissing,
+    degradedCount: degradedIds.length,
+    degradedIds,
+    failed,
+    warning: parts.length > 0 ? parts.join('，') + '（详情见日志）' : '',
+  };
+}
+
 /** 运行 npm install 安装目标版本到 staging 目录。 */
 function runNpmInstall({ nodeExe, npmCli, stagingDir, targetVersion, registry, env = process.env, log = () => {}, timeoutMs = 10 * 60 * 1000 }) {
   return new Promise((resolve, reject) => {
@@ -327,11 +353,13 @@ async function stageAgentUpdate({
   let patchSummary = null;
   if (typeof applyPatches === 'function') {
     try {
-      patchSummary = await applyPatches(stagingDir);
+      const rawReport = await applyPatches(stagingDir);
+      patchSummary = summarizePatchReport(rawReport);
     } catch (err) {
       log('暂存目录预打补丁告警（容忍继续）: ' + String((err && err.message) || err));
     }
   }
+  const patchWarning = patchSummary && patchSummary.warning ? patchSummary.warning : '';
 
   try {
     fs.writeFileSync(
@@ -342,6 +370,7 @@ async function stageAgentUpdate({
         registry: usedRegistry,
         installedAt: new Date().toISOString(),
         source: 'npm-latest',
+        patchSummary,
       }, null, 2) + '\n',
       'utf8',
     );
@@ -353,6 +382,7 @@ async function stageAgentUpdate({
     version: installedVer,
     registry: usedRegistry,
     patchSummary,
+    patchWarning,
   };
 }
 
@@ -368,4 +398,5 @@ module.exports = {
   checkAgentUpdate,
   stageAgentUpdate,
   findVendorNpmCli,
+  summarizePatchReport,
 };

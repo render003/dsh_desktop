@@ -44,6 +44,18 @@ pub async fn menu_action(action: String, payload: Option<serde_json::Value>, app
             win.eval("try{location.reload()}catch(e){}").map_err(terr)?;
             Ok(serde_json::Value::Null)
         }
+        "restart-kernel" => {
+            let state = app.state::<AppState>();
+            let sv = state
+                .supervisor
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+                .ok_or_else(|| BridgeError::internal("supervisor 未初始化"))?;
+            sv.refresh_active_agent();
+            restart_agent_kernel(&app, &sv);
+            Ok(serde_json::json!({ "ok": true, "restarted": true }))
+        }
         "devtools" => {
             // open_devtools 仅 debug 构建可用（release 无 devtools feature）。
             #[cfg(debug_assertions)]
@@ -135,6 +147,7 @@ pub async fn menu_action(action: String, payload: Option<serde_json::Value>, app
                 "version": res.version,
                 "agentSource": res.agent_source,
                 "restarted": res.restarted,
+                "patchWarning": res.patch_warning,
                 "error": res.error,
             }))
         }
@@ -159,6 +172,7 @@ struct AgentMutateResult {
     version: String,
     agent_source: String,
     restarted: bool,
+    patch_warning: Option<String>,
     error: Option<String>,
 }
 
@@ -301,6 +315,7 @@ fn run_agent_install(
                     version: before.version,
                     agent_source: before.source,
                     restarted: false,
+                    patch_warning: None,
                     error: Some(err),
                 });
             }
@@ -326,6 +341,7 @@ fn run_agent_install(
             version: before.version,
             agent_source: before.source,
             restarted: false,
+            patch_warning: None,
             error: Some("未获取到有效目标版本号".into()),
         });
     }
@@ -351,8 +367,17 @@ fn run_agent_install(
             version: before.version,
             agent_source: before.source,
             restarted: false,
+            patch_warning: None,
             error: Some(err),
         });
+    }
+    let patch_warning = staged
+        .get("patchWarning")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(summary) = staged.get("patchSummary") {
+        crate::supervisor::file_log(&format!("[agent-update] 补丁适配摘要：{summary}"));
     }
     let staging_dir = staged
         .get("stagingDir")
@@ -360,7 +385,7 @@ fn run_agent_install(
         .map(std::path::PathBuf::from)
         .ok_or_else(|| BridgeError::internal("暂存结果缺 stagingDir"))?;
 
-    // 停内核释放文件锁 → 原子切换覆盖层 → 刷新现役内核并重启。
+    // 停内核释放文件锁 → 原子切换覆盖层 → 刷新现役内核/CLI shim 并重启。
     sv.shutdown();
     std::thread::sleep(std::time::Duration::from_millis(250));
     if let Err(e) = swap_agent_overlay(&state.paths.app_data, &staging_dir) {
@@ -371,16 +396,19 @@ fn run_agent_install(
             version: before.version,
             agent_source: before.source,
             restarted: true,
+            patch_warning,
             error: Some(e),
         });
     }
     let active = sv.refresh_active_agent();
+    super::dsh_cli::ensure_dsh_cli_shim();
     restart_agent_kernel(app, &sv);
     Ok(AgentMutateResult {
         ok: true,
         version: active.version,
         agent_source: active.source,
         restarted: true,
+        patch_warning,
         error: None,
     })
 }
@@ -403,12 +431,14 @@ fn run_agent_reset_bundled(app: &AppHandle) -> Result<AgentMutateResult, BridgeE
         std::fs::remove_dir_all(&overlay).map_err(|e| BridgeError::internal(format!("删除覆盖层失败：{e}")))?;
     }
     let active = sv.refresh_active_agent();
+    super::dsh_cli::ensure_dsh_cli_shim();
     restart_agent_kernel(app, &sv);
     Ok(AgentMutateResult {
         ok: true,
         version: active.version,
         agent_source: active.source,
         restarted: true,
+        patch_warning: None,
         error: None,
     })
 }

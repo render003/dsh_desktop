@@ -358,6 +358,7 @@ mod window_chrome_tests {
             "menuItemHtml('set-custom-icon'",
             "menuItemHtml('reset-custom-icon'",
             "menuItemHtml('reload'",
+            "menuItemHtml('restart-kernel'",
             "menuItemHtml('devtools'",
             "menuItemHtml('fullscreen'",
             "menuItemHtml('open-browser'",

@@ -487,14 +487,16 @@
       if (r && r.ok) {
         if (r.version) menuState.agentVersion = r.version;
         if (r.agentSource) menuState.agentSource = r.agentSource;
+        var pw = (r.patchWarning && typeof r.patchWarning === 'string') ? r.patchWarning : '';
+        var okMsg = '已更新到 v' + (r.version || ver) + (pw ? '（' + pw + '）' : '，正在重启内核…');
         agentUpdateState = {
           status: 'latest',
           latestVersion: r.version || ver,
           registry: reg,
-          message: '已更新到 v' + (r.version || ver) + '，正在重启内核…',
+          message: okMsg,
           isError: false,
         };
-        shellNotify('DSH Pack', 'Agent 已更新到 v' + (r.version || ver) + '，正在重启内核');
+        shellNotify('DSH Pack', 'Agent 已更新到 v' + (r.version || ver) + (pw ? '：' + pw : '，正在重启内核'));
       } else {
         agentUpdateState = {
           status: ver ? 'available' : 'idle',
@@ -551,6 +553,7 @@
       menuItemHtml('reset-custom-icon', '恢复默认图标', '') +
       '<div class="dch-sep"></div>' +
       menuItemHtml('reload', '重新加载', '<span class="dch-kbd">Ctrl+R</span>') +
+      menuItemHtml('restart-kernel', '重启内核', '') +
       menuItemHtml('devtools', '开发者工具', '<span class="dch-kbd">F12</span>') +
       menuItemHtml('fullscreen', '全屏', '<span class="dch-kbd">F11</span>') +
       '<div class="dch-sep"></div>' +

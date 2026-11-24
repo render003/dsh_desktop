@@ -23,11 +23,14 @@ pub fn recovery_state(app: AppHandle) -> Result<serde_json::Value, BridgeError> 
             .unwrap_or_else(|| "内核未装配（supervisor 未初始化）".to_string());
         return Ok(serde_json::json!({ "state": "no-kernel", "reason": reason }));
     };
+    let active = sv.active_agent();
     Ok(serde_json::json!({
         "state": format!("{:?}", sv.state()),
         "kernelUrl": sv.kernel_url(),
         "crashes": sv.crash_count(),
         "reason": sv.last_error(),
+        "agentVersion": active.version,
+        "agentSource": active.source,
     }))
 }
 

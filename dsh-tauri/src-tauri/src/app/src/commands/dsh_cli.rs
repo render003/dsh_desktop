@@ -145,7 +145,32 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "body-v2");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn shim_bin_js_follows_active_overlay() {
+        let base = std::env::temp_dir().join(format!("dsh-cli-active-{}-{}", std::process::id(), line!()));
+        let _ = std::fs::remove_dir_all(&base);
+        let app = base.join("app");
+        let ud = base.join("ud");
+        let mk = |root: &std::path::Path, ver: &str| {
+            let pkg = root.join("node_modules").join("@deepseek-ai").join("dsh");
+            std::fs::create_dir_all(pkg.join("lib")).unwrap();
+            std::fs::write(pkg.join("package.json"), format!(r#"{{"version":"{ver}"}}"#)).unwrap();
+            std::fs::write(pkg.join("lib").join("bin.js"), "// stub").unwrap();
+        };
+        mk(&app, "0.2.2-rc.5");
+        assert!(resolve_shim_bin_js(&app, &ud).starts_with(&app), "无覆盖层指向内置");
+        mk(&ud.join("agent"), "0.2.2");
+        assert!(resolve_shim_bin_js(&app, &ud).starts_with(ud.join("agent")), "有更新覆盖层指向覆盖层");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
+
+/// 解析 CLI shim 目标 bin.js：复用 supervisor 的现役内核判定（覆盖层优先于内置）。
+fn resolve_shim_bin_js(app_dir: &std::path::Path, user_data_dir: &std::path::Path) -> std::path::PathBuf {
+    crate::supervisor::resolve_active_agent(app_dir, user_data_dir).bin_js
+}
+
 /// 入口：写 shim（内容变化才写）+ PATH 幂等追加。任何失败仅日志告警。
 ///
 /// 写入降级链（v0.6.3）：安装根（默认，PATH 短、全局可见）→ 拒绝访问
@@ -158,12 +183,7 @@ pub fn ensure_dsh_cli_shim() {
         let root = install_root().ok_or_else(|| "无法定位安装根（current_exe）".to_string())?;
         let app_dir = root.join("dsh-desktop");
         let node = app_dir.join("vendor").join("node").join(if cfg!(windows) { "node.exe" } else { "node" });
-        let bin_js = app_dir
-            .join("node_modules")
-            .join("@deepseek-ai")
-            .join("dsh")
-            .join("lib")
-            .join("bin.js");
+        let bin_js = resolve_shim_bin_js(&app_dir, &shell_core::DshPaths::resolve().app_data);
         if !node.exists() || !bin_js.exists() {
             return Err(format!("内核/node 不在位（{} / {}），跳过 shim", node.display(), bin_js.display()));
         }

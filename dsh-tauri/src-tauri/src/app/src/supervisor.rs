@@ -123,6 +123,8 @@ struct Inner {
     /// （同代际下崩溃自动重启换内核后，旧环不得继续探活/误杀新内核）。
     probe_gen: u64,
     stopping: bool,
+    /// 本次运行是否已因崩溃环自动回退过 updated 覆盖层（防无限回退循环）。
+    overlay_auto_rolled_back: bool,
     /// 本次 boot 瀑布起点的 dsh-web.log 偏移（内核报错提取作用域，None=未
     /// 记账：恢复页不得引用上一次运行的残留输出——那会把旧根因安到新失败上）。
     log_mark: Option<u64>,
@@ -222,6 +224,7 @@ impl Supervisor {
                 generation: 0,
                 probe_gen: 0,
                 stopping: false,
+                overlay_auto_rolled_back: false,
                 log_mark: None,
             })),
             wsl: Arc::new(Mutex::new(None)),
@@ -583,6 +586,9 @@ impl Supervisor {
                             this.on_boot_success(url, port3, gen, None)
                         }
                         Err(final_err) => {
+                            if this.try_auto_rollback_overlay(&tx, &format!("启动失败（回滚快照后）：{final_err}")) {
+                                return;
+                            }
                             let note = this.kernel_error_suffix();
                             this.guard_incident("boot-failed", &format!("回滚到 {id} 后仍无法启动：{final_err}{note}"));
                             this.enter_recovery(&tx, &format!("回滚后仍失败：{final_err}"));
@@ -590,6 +596,9 @@ impl Supervisor {
                     }
                 }
                 None => {
+                    if this.try_auto_rollback_overlay(&tx, "启动失败且无可回滚快照") {
+                        return;
+                    }
                     let note = this.kernel_error_suffix();
                     this.guard_incident("boot-failed", &format!("启动失败且无可回滚快照（首次运行或快照耗尽）{note}"));
                     this.enter_recovery(&tx, "启动失败且无可回滚快照（可在恢复页重试）");
@@ -1322,7 +1331,12 @@ impl Supervisor {
             // 此前 Cooldown 落在 `_` 兜底臂继续自动重启，恢复页背后内核反复
             // 拉起/退出（用户侧「频繁重启」的主机），且任一次走到就绪行还会
             // 经 KernelReady 把页面从恢复页拉回内核页（页面反复横跳）。
-            Verdict::Tripped | Verdict::Cooldown => self.enter_recovery_tx(tx, "崩溃环触发"),
+            Verdict::Tripped | Verdict::Cooldown => {
+                if self.try_auto_rollback_overlay(tx, "崩溃环触发") {
+                    return;
+                }
+                self.enter_recovery_tx(tx, "崩溃环触发");
+            }
             Verdict::Ok => {
                 // 未成环：自动重启一次（Electron watchServerProc 语义：异常退出自动拉起）。
                 // 探活/换页不在此布防：新内核的就绪行线程统一负责（probe_gen 令牌）。
@@ -1631,12 +1645,70 @@ impl Supervisor {
             let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             g.generation += 1;
             g.stopping = false;
+            g.overlay_auto_rolled_back = false;
             g.kernel_url = None;
             g.crash.record_graceful_restart();
         }
         self.kill_kernel();
         self.refresh_active_agent();
         self.spawn_boot(tx, preferred_port);
+    }
+
+    /// 覆盖层崩溃环自动回退（1.1）：若现役内核来自热更新覆盖层（`source == "updated"`）
+    /// 且本轮尚未自动回退过，先杀树、把 `<app_data>/agent` 隔离到 `agent-broken-<ts>`，
+    /// 切回 `bundled` 内核并自动重启一次，杜绝坏版本覆盖层导致打不开客户端。
+    fn try_auto_rollback_overlay(self: &Arc<Self>, tx: &Sender<SupervisorEvent>, reason: &str) -> bool {
+        let active = self.active_agent();
+        if active.source != "updated" {
+            return false;
+        }
+        let port = {
+            let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if g.overlay_auto_rolled_back {
+                return false;
+            }
+            g.overlay_auto_rolled_back = true;
+            g.port
+        };
+        self.kill_kernel();
+        std::thread::sleep(Duration::from_millis(200));
+        let app_data = shell_core::DshPaths::resolve().app_data;
+        match quarantine_broken_agent_overlay(&app_data) {
+            Ok(Some(dest)) => {
+                log_line(&format!(
+                    "覆盖层自动回退：updated v{} 触发「{reason}」，已隔离至 {} 并切回 bundled",
+                    active.version,
+                    dest.display()
+                ));
+                self.guard_incident(
+                    "agent-overlay-rollback",
+                    &format!(
+                        "热更新 Agent 覆盖层 v{} 异常（{reason}），已自动隔离至 {} 并回退内置版本重试。",
+                        active.version,
+                        dest.display()
+                    ),
+                );
+            }
+            Ok(None) => {
+                log_line(&format!("覆盖层自动回退：未发现 agent 目录（{reason}），直接切回 bundled"));
+            }
+            Err(e) => {
+                log_line(&format!("覆盖层自动回退失败（{e}），转交恢复页"));
+                return false;
+            }
+        }
+        let fallback = self.refresh_active_agent();
+        log_line(&format!("已切回 {} v{}，自动重新拉起内核", fallback.source, fallback.version));
+        {
+            let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            g.generation += 1;
+            g.stopping = false;
+            g.kernel_url = None;
+            g.crash = CrashLoopDetector::new();
+            g.crash_count = 0;
+        }
+        self.spawn_boot(tx.clone(), port);
+        true
     }
 
     /// 进入恢复页。
@@ -1847,6 +1919,17 @@ pub(crate) fn resolve_active_agent(app_dir: &std::path::Path, user_data_dir: &st
         version: bundled_ver,
         source: "bundled".into(),
     }
+}
+
+/// 将损坏的 `<user_data_dir>/agent` 覆盖层隔离为 `agent-broken-<ms>`（保留现场排障）。
+pub(crate) fn quarantine_broken_agent_overlay(user_data_dir: &std::path::Path) -> Result<Option<PathBuf>, String> {
+    let overlay = user_data_dir.join("agent");
+    if !overlay.exists() {
+        return Ok(None);
+    }
+    let dest = user_data_dir.join(format!("agent-broken-{}", now_ms()));
+    std::fs::rename(&overlay, &dest).map_err(|e| format!("隔离损坏覆盖层失败：{e}"))?;
+    Ok(Some(dest))
 }
 
 fn now_ms() -> u64 {
@@ -2576,6 +2659,13 @@ Content-Length: 0
         assert_eq!(a1.source, "updated");
         assert_eq!(a1.version, "0.2.2");
         assert!(a1.bin_js.starts_with(ud.join("agent")));
+        // 崩溃环隔离：agent 目录挪为 agent-broken-* 后自动回落 bundled
+        let broken = quarantine_broken_agent_overlay(&ud).unwrap().expect("应隔离 agent 目录");
+        assert!(broken.exists() && broken.file_name().unwrap().to_str().unwrap().starts_with("agent-broken-"));
+        assert!(!ud.join("agent").exists());
+        assert_eq!(resolve_active_agent(&app, &ud).source, "bundled");
+        // 二次调用无残留 → Ok(None)
+        assert_eq!(quarantine_broken_agent_overlay(&ud).unwrap(), None);
         let _ = std::fs::remove_dir_all(&base);
     }
 

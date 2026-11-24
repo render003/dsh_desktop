@@ -20,6 +20,7 @@ const {
   resolveActiveAgentRoot,
   checkAgentUpdate,
   stageAgentUpdate,
+  summarizePatchReport,
 } = require('../lib/agent-update');
 
 function mkAgentTree(root, version, withBin = true) {
@@ -159,11 +160,18 @@ test('stageAgentUpdate：拒绝 alpha 与非法版本；成功安装后预打补
     },
     applyPatches: async (dir) => {
       patchedDir = dir;
-      return { changed: 3 };
+      return { total: 66, changed: 50, anchorMissing: 2, degraded: ['slot-error-isolation'], failed: 0, errors: [] };
     },
   });
   assert.equal(okRes.ok, true);
   assert.equal(okRes.version, '0.2.2');
   assert.equal(patchedDir, okRes.stagingDir);
+  assert.equal(okRes.patchSummary.anchorMissing, 2);
+  assert.equal(okRes.patchSummary.degradedCount, 1);
+  assert.match(okRes.patchWarning, /2 项补丁锚点失配/);
+  assert.match(okRes.patchWarning, /1 项降级/);
   assert.ok(fs.existsSync(path.join(okRes.stagingDir, '.dsh-agent-meta.json')));
+
+  const cleanSummary = summarizePatchReport({ total: 66, changed: 66, anchorMissing: 0, degraded: [], failed: 0, errors: [] });
+  assert.equal(cleanSummary.warning, '');
 });

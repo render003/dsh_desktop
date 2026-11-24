@@ -87,6 +87,7 @@ pub fn navigate_main(app: &AppHandle, url: &str) -> Result<(), BridgeError> {
 }
 
 /// 原子写：tmp + rename。
+#[cfg(test)]
 pub fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("revert-tmp");
     std::fs::write(&tmp, content)?;
@@ -112,6 +113,7 @@ pub fn chrono_now() -> String {
 }
 
 /// 标准 base64 编码（无依赖实现）。
+#[cfg(test)]
 pub fn b64(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);

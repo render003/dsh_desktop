@@ -46,6 +46,7 @@ static APPEND_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// 实爆）。所有改进程 env 的测试统一取本锁。放本模块顶层：ta9/ta4 以
 /// `#[path]` 把本文件包含进各自测试 crate（彼时 `crate::` 指向测试 crate，
 /// 引 lib 的锁必 E0432），自包含才能在两个编译上下文同时可用。
+#[allow(dead_code)]
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 壳日志目录（`<app_data>/logs`）。
