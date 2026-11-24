@@ -2204,7 +2204,7 @@ mod heartbeat_watcher_tests {
         );
         // supervisor 侧出口：restart_kernel_after_renderer_escape = kill_kernel
         // + on_kernel_exit（崩溃环判定限次，与恢复页互斥协同）。
-        let sup = include_str!("supervisor.rs").replace("\r\n", "\n");
+        let sup = include_str!("supervisor/mod.rs").replace("\r\n", "\n");
         let escape_seg = sup
             .split("pub fn restart_kernel_after_renderer_escape")
             .nth(1)

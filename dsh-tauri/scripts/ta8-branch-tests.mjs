@@ -216,7 +216,9 @@ check('PCT-LOGIC', 'percent_decode 跨平台输入矩阵（穿越/加号/UTF-8/�
 // 形态轨 4：其余非 Windows 分支登记项锚定（登记表见脚本头部报告输出）
 // ---------------------------------------------------------------------------
 check('MISC-SHAPE', '杂项分支形态（vendor node 名 / no-window no-op / pid_alive 三态 / paths 数据根）', () => {
-  const sup = read('dsh-tauri/src-tauri/src/app/src/supervisor.rs');
+  const sup = read('dsh-tauri/src-tauri/src/app/src/supervisor/mod.rs')
+    + '\n'
+    + read('dsh-tauri/src-tauri/src/app/src/supervisor/boot.rs');
   assert(sup.includes('#[cfg(not(windows))]\nconst VENDOR_NODE_NAME: &str = "node";'),
     '非 Windows vendor node 须为 node（无 .exe）');
   const wsl = read('dsh-tauri/src-tauri/crates/wsl-backend/src/lib.rs');

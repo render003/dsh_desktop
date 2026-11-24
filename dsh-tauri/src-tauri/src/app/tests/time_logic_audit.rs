@@ -75,7 +75,13 @@ fn norm(src: &str) -> String {
 }
 
 const WSL_BACKEND_SRC: &str = include_str!("../../../crates/wsl-backend/src/lib.rs");
-const SUPERVISOR_SRC: &str = include_str!("../src/supervisor.rs");
+const SUPERVISOR_SRC: &str = concat!(
+    include_str!("../src/supervisor/mod.rs"),
+    "\n",
+    include_str!("../src/supervisor/boot.rs"),
+    "\n",
+    include_str!("../src/supervisor/probe.rs"),
+);
 const LIB_SRC: &str = include_str!("../src/lib.rs");
 const SESSION_NOTIFY_SRC: &str = include_str!("../src/session_notify.rs");
 
