@@ -65,6 +65,44 @@ const SYNC_SUBDIRS = ['lib', 'client', 'data', 'assets', 'src', 'core', 'dist', 
 // （典型：dsh-mini 的 gui/ 手机端快照），更新版缺了就是分发残缺，补齐无害。
 const HEAL_SUBDIRS = SYNC_SUBDIRS.filter((s) => s !== 'node_modules');
 
+/**
+ * 判定插件源目录下的 src/ 是否为纯编译期 TypeScript 源码目录（可跳过同步进 profile）：
+ * 仅当同时满足：
+ *   1. 插件已存在编译产物目录 lib/ 或 dist/；
+ *   2. package.json 的 main 不指向 src/；
+ *   3. src/ 内至少含一个 .ts/.tsx 文件，且不含任何可直接执行的 .js/.mjs/.cjs 文件。
+ * 这样 dsh-better-sidebar / dsh-basics-panel / dsh-prompt-optimizer 的数百个 TS 源码
+ * 文件不再随同步拷贝进运行时 profile，而像 dsh-offpeak（直接运行 src/index.js）或
+ * 测试哨兵目录仍保持全量同步。
+ */
+function shouldSkipDevSrcDir(pluginSrcRoot, pkg) {
+  const srcDir = path.join(pluginSrcRoot, 'src');
+  if (!fs.existsSync(srcDir)) return false;
+  const hasCompiled = fs.existsSync(path.join(pluginSrcRoot, 'lib'))
+    || fs.existsSync(path.join(pluginSrcRoot, 'dist'));
+  if (!hasCompiled) return false;
+  if (pkg && typeof pkg.main === 'string' && /^\.?\/?src\//.test(pkg.main.replace(/\\/g, '/'))) {
+    return false;
+  }
+  let hasTs = false;
+  let hasJs = false;
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (hasJs) return;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile()) {
+        if (/\.(?:js|mjs|cjs)$/i.test(e.name)) { hasJs = true; return; }
+        if (/\.(?:ts|tsx)$/i.test(e.name)) hasTs = true;
+      }
+    }
+  };
+  walk(srcDir);
+  return hasTs && !hasJs;
+}
+
 // ---------------------------------------------------------------------------
 // 目录/文件清理
 // ---------------------------------------------------------------------------
@@ -776,6 +814,7 @@ function syncCompanionFiles(opts) {
             // 且任何重装都无法自愈（本分支每次启动都会跳过）。这里只补整目录
             // 缺失、绝不覆盖更新版已有文件：
             for (const sub of HEAL_SUBDIRS) {
+              if (sub === 'src' && shouldSkipDevSrcDir(src, aPkg)) continue;
               const sdir = path.join(src, sub);
               const ddir = path.join(dest, sub);
               if (fs.existsSync(sdir) && !fs.existsSync(ddir)) {
@@ -869,6 +908,7 @@ function syncCompanionFiles(opts) {
       // 测试把 PATH 收口到 System32 后 spawnSync('git') ENOENT，判据静默回退
       // 「宁同步」，防线形同虚设——环境依赖的探针不可靠，用声明式标志。
       if (sub === 'node_modules' && !p.shipsNodeModules) continue;
+      if (sub === 'src' && shouldSkipDevSrcDir(src, pkg)) continue;
       syncDir(path.join(src, sub), path.join(dest, sub), log);
     }
     if (isBundle) {
@@ -914,6 +954,7 @@ module.exports = {
   removeAcpBasicDisableBlock,
   registerCompanionPatchEntries,
   syncCompanionFiles,
+  shouldSkipDevSrcDir,
   dirNeedsSync,
   syncDir,
 };

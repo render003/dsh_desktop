@@ -122,3 +122,38 @@ test('keep-newer（HEAL_SUBDIRS）分支：缺整目录补齐，但 node_modules
   assert.ok(!fs.existsSync(path.join(dest, 'node_modules')), 'keep-newer 分支不得注入 node_modules/（HEAL_SUBDIRS 契约）');
   assert.ok(logs.some((m) => m.includes('补齐')), '补齐应有日志');
 });
+
+test('开发期纯 TS src/ 过滤：存在 lib/ 且 src/ 仅含 .ts/.tsx 时跳过同步，JS 入口插件（如 dsh-offpeak）照常同步', (t) => {
+  const home = tmpdir(t);
+  const profileDir = path.join(home, 'profiles', 'web');
+  const assetsRoot = path.join(home, 'assets');
+  fs.mkdirSync(assetsRoot, { recursive: true });
+
+  // 插件 A：已编译到 lib/，src/ 为纯 TS 开发源码 → 跳过 src/
+  const dirA = path.join(assetsRoot, 'ts-compiled');
+  fs.mkdirSync(path.join(dirA, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(dirA, 'src', 'components'), { recursive: true });
+  fs.writeFileSync(path.join(dirA, 'package.json'), JSON.stringify({ name: 'ts-compiled', version: '1.0.0', main: 'lib/index.js' }));
+  fs.writeFileSync(path.join(dirA, 'lib', 'index.js'), 'export const ok = true;\n');
+  fs.writeFileSync(path.join(dirA, 'src', 'index.ts'), 'export const ok: boolean = true;\n');
+  fs.writeFileSync(path.join(dirA, 'src', 'components', 'Panel.tsx'), 'export const P = () => null;\n');
+
+  // 插件 B：无 lib/，直接运行 src/index.js（dsh-offpeak 形状）→ 必须保留 src/
+  const dirB = path.join(assetsRoot, 'js-in-src');
+  fs.mkdirSync(path.join(dirB, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dirB, 'package.json'), JSON.stringify({ name: 'js-in-src', version: '1.0.0', main: 'src/index.js' }));
+  fs.writeFileSync(path.join(dirB, 'src', 'index.js'), 'export default {};\n');
+
+  const plugins = [
+    { id: 'ts-compiled', name: 'ts-compiled' },
+    { id: 'js-in-src', name: 'js-in-src' },
+  ];
+  syncCompanionFiles({ plugins, assetsRoot, profileDir, vendorRoot: path.join(home, 'vendor'), removedIds: new Set(), ...noops });
+
+  const destA = path.join(profileDir, 'node_modules', 'ts-compiled');
+  assert.ok(fs.existsSync(path.join(destA, 'lib', 'index.js')), '已编译插件的 lib/ 必须同步');
+  assert.ok(!fs.existsSync(path.join(destA, 'src')), '存在 lib/ 且 src/ 仅含 TS 源码时，src/ 不应同步进 profile');
+
+  const destB = path.join(profileDir, 'node_modules', 'js-in-src');
+  assert.ok(fs.existsSync(path.join(destB, 'src', 'index.js')), '直接以 src/index.js 为入口的插件必须同步 src/');
+});

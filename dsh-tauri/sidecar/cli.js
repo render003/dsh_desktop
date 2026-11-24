@@ -115,6 +115,7 @@ function loadModules(appDir) {
   return {
     integration: req('scripts/integration'),
     agentUpdate: req('scripts/lib/agent-update'),
+    patchCache: req('scripts/lib/patch-cache'),
     pluginManagerPatch: req('scripts/plugin-manager-patch'),
     pluginManagerUpdate: req('scripts/plugin-manager-update'),
     pluginUpdateSources: req('scripts/lib/plugin-update-sources'),
@@ -817,7 +818,36 @@ async function cmdBoot(args, ctx) {
   let ok = true;
   ok = (await step('repair', () => integration.healBeforeServer())) && ok;
   ok = (await step('sync', () => integration.syncPlugins())) && ok;
-  ok = (await step('patches', () => integration.applyPatches())) && ok;
+  ok = (await step('patches', () => {
+    const forcePatches = (Array.isArray(args) && args.includes('--force-patches'))
+      || process.env.DSH_PATCH_CACHE === '0';
+    const cacheFile = path.join(userDataDir, 'patch-cache.json');
+    const fp = mods.patchCache.computePatchFingerprint({
+      appDir,
+      home,
+      userDataDir,
+      wslMode: !!backend.wsl,
+      force: forcePatches,
+    });
+    if (fp && mods.patchCache.readPatchCache(cacheFile) === fp) {
+      log('boot patches: 补丁目标指纹未变，命中快路径缓存，跳过补丁扫描');
+      return { ok: true, cached: true };
+    }
+    const report = integration.applyPatches();
+    if (fp && report && (report.failed || 0) === 0 && (!Array.isArray(report.errors) || report.errors.length === 0)) {
+      const finalFp = (report.changed || 0) > 0
+        ? mods.patchCache.computePatchFingerprint({
+          appDir,
+          home,
+          userDataDir,
+          wslMode: !!backend.wsl,
+          force: false,
+        })
+        : fp;
+      if (finalFp) mods.patchCache.writePatchCache(cacheFile, finalFp);
+    }
+    return report;
+  })) && ok;
   ok = (await step('compat-pin', () => {
     // 兼容层 M1（v0.6.0）：kernel-pin fail-closed 校验——vendored tarball 与
     // kernel-pin.json 的精确 pin 一致性（版本混装防线；校验器随 payload 分发，
@@ -883,10 +913,22 @@ async function cmdPatchesApply(args, ctx) {
   const home = backend.home;
   const integration = makeIntegration(mods, { appDir, home, userDataDir, wsl: backend.wsl });
   const t0 = Date.now();
+  const cacheFile = path.join(userDataDir, 'patch-cache.json');
+  try { fs.rmSync(cacheFile, { force: true }); } catch {}
   let warning = null;
   let report = null;
   try {
     report = (await integration.applyPatches()) ?? null;
+    if (report && (report.failed || 0) === 0 && (!Array.isArray(report.errors) || report.errors.length === 0)) {
+      const fp = mods.patchCache.computePatchFingerprint({
+        appDir,
+        home,
+        userDataDir,
+        wslMode: !!backend.wsl,
+        force: false,
+      });
+      if (fp) mods.patchCache.writePatchCache(cacheFile, fp);
+    }
   } catch (err) {
     warning = String((err && err.message) || err);
     log('patches-apply 异常（容忍，不阻断回滚拉起）: ' + warning);

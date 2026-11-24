@@ -64,6 +64,14 @@ window.__ModuleLoader__.load({
       updatingAll: "正在更新 {done}/{total}…",
       batchDoneOk: "批量更新完成：成功 {ok} 项 · 下次启动生效",
       batchDoneMixed: "批量更新完成：成功 {ok} 项，失败 {fail} 项（详情见各行提示）",
+      presetLean: "精简常用",
+      presetLeanTitle: "仅保留高频核心内置插件，其余可停用项一键关闭以降低内存与启动耗时（可随时恢复）",
+      presetAll: "全部启用",
+      presetAllTitle: "重新启用全部可切换的内置插件",
+      presetRunning: "正在应用预设 {done}/{total}…",
+      presetDoneOk: "已应用「{preset}」：变更 {ok} 项 · 下次启动生效",
+      presetDoneMixed: "应用「{preset}」完成：成功 {ok} 项，失败 {fail} 项（详情见各行提示）",
+      presetNoChange: "当前状态已符合「{preset}」，无需修改。",
       updated: "已更新到 {version} · 下次启动生效",
       updatedBare: "已更新 · 下次启动生效",
       updateFailed: "更新失败：",
@@ -119,6 +127,14 @@ window.__ModuleLoader__.load({
       updatingAll: "Updating {done}/{total}…",
       batchDoneOk: "Batch update done: {ok} updated · takes effect on next launch",
       batchDoneMixed: "Batch update done: {ok} updated, {fail} failed (see row notes)",
+      presetLean: "Lean preset",
+      presetLeanTitle: "Keep core everyday built-in plugins enabled and disable optional ones to reduce memory and startup time",
+      presetAll: "Enable all",
+      presetAllTitle: "Re-enable all toggleable built-in plugins",
+      presetRunning: "Applying preset {done}/{total}…",
+      presetDoneOk: "Applied “{preset}”: {ok} changed · takes effect on next launch",
+      presetDoneMixed: "Applied “{preset}”: {ok} changed, {fail} failed (see row notes)",
+      presetNoChange: "Already matches “{preset}” — no changes needed.",
       updated: "Updated to {version} · takes effect on next launch",
       updatedBare: "Updated · takes effect on next launch",
       updateFailed: "Update failed: ",
@@ -161,6 +177,26 @@ window.__ModuleLoader__.load({
     // 不参与「单个更新」的件：better-sidebar 随包整包换代（sidecar 的 checkUpdates 也
     // 把它排除了）。按 id 兜底，避免后端契约变化时界面画出必然失败的按钮。
     const UPDATE_EXCLUDED_ID = "better-sidebar";
+
+    // 「精简常用」预设保留启用的高频核心插件；其余可切换项一键停用，可随时通过「全部启用」恢复。
+    const LEAN_CORE_IDS = new Set([
+      "dsh-builtin-manager",
+      "balance",
+      "better-sidebar",
+      "bili-native",
+      "dsh-context",
+      "file-changes",
+      "web-search-free",
+      "dsh-notify",
+      "input-history",
+      "dsh-easyrewrite",
+      "change-review",
+      "dsh-session-manager",
+      "dsh-subagent-lens",
+      "goal-completion",
+      "mcp-manager-ui",
+      "shop"
+    ]);
 
     // 常用内置件的中文展示别名（供中文界面辨识与搜索命中，解决纯英文 package.json 如
     // dsh-context 搜「上下文洞察」搜不到的问题）。
@@ -295,6 +331,7 @@ window.__ModuleLoader__.load({
       const [checkError, setCheckError] = react.useState("");
       const [updating, setUpdating] = react.useState({});
       const [batchState, setBatchState] = react.useState(null);
+      const [presetState, setPresetState] = react.useState(null);
 
       const load = react.useCallback(async () => {
         if (!bridge) { setState("no-bridge"); return; }
@@ -446,6 +483,58 @@ window.__ModuleLoader__.load({
         setBatchState({ finished: true, text: summary, tone: failCount === 0 ? "ok" : "error" });
       }, [bridge, load, updatableRows, updates, L]);
 
+      // 预设批量启停（精简常用 / 全部启用）：串行复用现有 bridge.setEnabled，
+      // 自动跳过本管理页自身、不可切换项与已卸载项，零额外后端写接口。
+      const applyPreset = react.useCallback(async (mode) => {
+        if (!bridge) return;
+        const label = mode === "lean" ? L.presetLean : L.presetAll;
+        const plan = [];
+        for (const row of rows) {
+          if (row.id === SELF || row.toggleable !== true || row.removed === true) continue;
+          const want = mode === "lean" ? LEAN_CORE_IDS.has(row.id) : true;
+          if ((row.enabled === true) !== want) plan.push({ row, want });
+        }
+        if (plan.length === 0) {
+          setPresetState({ finished: true, text: L.presetNoChange.replace("{preset}", label), tone: "muted" });
+          return;
+        }
+        let okCount = 0;
+        let failCount = 0;
+        for (let i = 0; i < plan.length; i++) {
+          const { row, want } = plan[i];
+          setPresetState({
+            finished: false,
+            text: L.presetRunning.replace("{done}", String(i + 1)).replace("{total}", String(plan.length)),
+            tone: "muted"
+          });
+          setBusy((prev) => ({ ...prev, [row.id]: true }));
+          try {
+            const r = await bridge.setEnabled(row.id, want);
+            if (r && r.ok === false) {
+              failCount += 1;
+              setNotes((prev) => ({ ...prev, [row.id]: { text: L.saveFailed + String(r.error || r.message || ""), tone: "error" } }));
+            } else {
+              okCount += 1;
+              setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, enabled: want } : x)));
+              setChanged((prev) => ({ ...prev, [row.id]: true }));
+              setNotes((prev) => ({ ...prev, [row.id]: {
+                text: L.saved.replace("{name}", row.name || row.id).replace("{state}", want ? L.on : L.off),
+                tone: "ok"
+              } }));
+            }
+          } catch (e) {
+            failCount += 1;
+            setNotes((prev) => ({ ...prev, [row.id]: { text: L.saveFailed + String((e && e.message) || e), tone: "error" } }));
+          } finally {
+            setBusy((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+          }
+        }
+        const summary = failCount === 0
+          ? L.presetDoneOk.replace("{preset}", label).replace("{ok}", String(okCount))
+          : L.presetDoneMixed.replace("{preset}", label).replace("{ok}", String(okCount)).replace("{fail}", String(failCount));
+        setPresetState({ finished: true, text: summary, tone: failCount === 0 ? "ok" : "error" });
+      }, [bridge, rows, L]);
+
       if (state === "no-bridge") {
         return jsx("section", {
           children: jsx("p", { style: { fontSize: 12, opacity: .75 }, children: L.noBridge }, "msg")
@@ -462,7 +551,8 @@ window.__ModuleLoader__.load({
       });
       const enabledCount = rows.filter((r) => r.enabled === true).length;
       const batchRunning = !!(batchState && batchState.finished === false);
-      const anyBusy = Object.keys(busy).length > 0 || Object.keys(updating).length > 0 || batchRunning;
+      const presetRunning = !!(presetState && presetState.finished === false);
+      const anyBusy = Object.keys(busy).length > 0 || Object.keys(updating).length > 0 || batchRunning || presetRunning;
       const filterOptions = [
         { value: "all", label: L.filterAll.replace("{n}", String(rows.length)) },
         { value: "on", label: L.filterOn.replace("{n}", String(enabledCount)) },
@@ -523,6 +613,7 @@ window.__ModuleLoader__.load({
           state === "failed" ? note(L.loadFailed + loadError, "error") : null,
           state === "ready" && checkError !== "" ? note(L.checkFailed + checkError, "error") : null,
           state === "ready" && batchState && batchState.text ? note(batchState.text, batchState.tone) : null,
+          state === "ready" && presetState && presetState.text ? note(presetState.text, presetState.tone) : null,
           state === "empty" ? note(L.empty, "muted") : null,
           state === "ready" ? jsxs("div", {
             style: S.filterRow,
@@ -534,7 +625,23 @@ window.__ModuleLoader__.load({
                 label: L.filterLabel,
                 onChange: (v) => setFilter(v)
               }, "filter"),
-              jsx("span", { style: S.hint, children: countText }, "count")
+              jsx("span", { style: S.hint, children: countText }, "count"),
+              rows.length > 0 ? jsx(Button, {
+                variant: "ghost",
+                size: "sm",
+                disabled: checking || anyBusy,
+                title: L.presetLeanTitle,
+                onClick: () => applyPreset("lean"),
+                children: L.presetLean
+              }, "preset-lean") : null,
+              rows.length > 0 ? jsx(Button, {
+                variant: "ghost",
+                size: "sm",
+                disabled: checking || anyBusy,
+                title: L.presetAllTitle,
+                onClick: () => applyPreset("all"),
+                children: L.presetAll
+              }, "preset-all") : null
             ]
           }, "filters") : null,
           state === "ready" && rows.length > 0 && shown.length === 0 ? note(L.noneMatch, "muted") : null,

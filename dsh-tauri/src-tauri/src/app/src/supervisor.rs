@@ -43,6 +43,11 @@ const ZOMBIE_THRESHOLD: usize = 20;
 /// 崩溃/会话日志损坏而滞留 >0 时，最多再豁免 N 个阈值窗口（N×60s），之后
 /// 仍强制受控重启——保真死内核仍能被假死重启兜底（issue #159）。
 const ZOMBIE_DEFER_MAX: usize = 3;
+/// 内核就绪后前 60s 宽限期：冷加载 30+ 插件 + 首屏会话拉取期间事件循环易短时抖动，
+/// 将单次 HTTP 探活读/写超时适当放宽到 5s，避免启动首分钟出现无意义假死告警。
+const PROBE_GRACE_WINDOW: Duration = Duration::from_secs(60);
+const PROBE_GRACE_HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+const PROBE_NORMAL_HTTP_TIMEOUT: Duration = Duration::from_secs(3);
 
 use shell_core::RunState;
 
@@ -1437,20 +1442,72 @@ impl Supervisor {
     /// 探活循环：TCP connect + 就绪超时。
     /// HTTP 应用层探活：读到任何响应字节（含 404/401——内核对 / 至少回
     /// index/错误页）即证明事件循环在转。TCP 握手由 OS 协议栈完成，进程
+    /// 按探测启动后经过时长决定单次 HTTP 探活 I/O 超时：前 60s 启动宽限期 5s，之后 3s。
+    fn probe_http_timeout(elapsed: Duration) -> Duration {
+        if elapsed < PROBE_GRACE_WINDOW {
+            PROBE_GRACE_HTTP_TIMEOUT
+        } else {
+            PROBE_NORMAL_HTTP_TIMEOUT
+        }
+    }
+
     /// 假死时也恒成功——必须发请求读响应才能区分（issue #122/#129）。
     fn http_alive(port: u16) -> bool {
+        Self::http_alive_with_timeout(port, PROBE_NORMAL_HTTP_TIMEOUT)
+    }
+
+    /// 可配置 I/O 超时的 HTTP 探活（启动宽限期 5s / 常态 3s）。
+    fn http_alive_with_timeout(port: u16, io_timeout: Duration) -> bool {
         use std::io::{Read, Write};
         let Ok(addr) = format!("127.0.0.1:{port}").parse() else { return false };
         let Ok(mut s) = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)) else {
             return false;
         };
-        let _ = s.set_read_timeout(Some(Duration::from_secs(3)));
-        let _ = s.set_write_timeout(Some(Duration::from_secs(3)));
+        let _ = s.set_read_timeout(Some(io_timeout));
+        let _ = s.set_write_timeout(Some(io_timeout));
         if s.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").is_err() {
             return false;
         }
         let mut buf = [0u8; 16];
         matches!(s.read(&mut buf), Ok(n) if n > 0)
+    }
+
+    /// 假死取证 CPU 文案与序列标签构造（纯函数，可单测）：
+    /// 区分「首次基线采样」「增量定性（忙环/阻塞）」「真正采样失败」三种状态，
+    /// 修复此前 ×1 首轮必把成功基线误报为「取证不可用」的日志缺陷。
+    fn format_zombie_cpu_note(
+        zombie: usize,
+        last_cpu: Option<(std::time::Instant, u64)>,
+        cur: Option<u64>,
+        now: std::time::Instant,
+    ) -> (String, Option<String>) {
+        match (last_cpu, cur) {
+            (Some((t, prev)), Some(c)) => {
+                let win_ms = now.duration_since(t).as_millis() as u64;
+                let d = c.saturating_sub(prev);
+                if win_ms > 0 {
+                    let verdict = if d * 4 > win_ms {
+                        "忙环（事件循环被同步长任务独占）"
+                    } else {
+                        "阻塞/挂起（CPU 几乎无消耗）"
+                    };
+                    (
+                        format!("（取证：{win_ms}ms 窗口 CPU Δ={d}ms，{verdict}）"),
+                        Some(format!("×{zombie} Δ={d}ms/{win_ms}ms {verdict}")),
+                    )
+                } else {
+                    (String::new(), None)
+                }
+            }
+            (None, Some(_)) => (
+                "（首次基线采样，下轮起计算 CPU 增量）".to_string(),
+                Some(format!("×{zombie} 基线采样")),
+            ),
+            (_, None) => (
+                "（取证不可用：非 Windows/WSL 模式/采样失败）".to_string(),
+                Some(format!("×{zombie} 采样缺席")),
+            ),
+        }
     }
 
     /// 假死受控重启判定（纯函数，可单测）：HTTP 无响应连续次数达阈值且**无**
@@ -1485,6 +1542,7 @@ impl Supervisor {
             //   - 状态进 CrashLoop/Recovery：崩溃环/恢复页期间不得继续探活——
             //     此前探活环在恢复页期间继续探死端口，3 次失联后 on_kernel_exit
             //     会把崩溃自动重启刚拉起的新内核一并杀掉（复活-再杀循环）。
+            let probe_started = std::time::Instant::now();
             let mut consecutive = 0usize;
             let mut zombie = 0usize;
             let mut defer = 0usize; // 连续「有回合但 HTTP 无响应」的阈值窗口数（stale 兜底，见 ZOMBIE_DEFER_MAX）
@@ -1512,7 +1570,8 @@ impl Supervisor {
                     Duration::from_secs(2),
                 )
                 .is_ok();
-                if tcp_ok && Self::http_alive(port) {
+                let http_timeout = Self::probe_http_timeout(probe_started.elapsed());
+                if tcp_ok && Self::http_alive_with_timeout(port, http_timeout) {
                     consecutive = 0;
                     zombie = 0;
                     defer = 0;
@@ -1570,29 +1629,15 @@ impl Supervisor {
                 let cpu_note = {
                     let now = std::time::Instant::now();
                     let cur = this.kernel_pid().and_then(Supervisor::zombie_cpu_millis);
-                    let delta = match (last_cpu, cur) {
-                        (Some((t, prev)), Some(c)) => {
-                            Some((now.duration_since(t).as_millis() as u64, c.saturating_sub(prev)))
-                        }
-                        _ => None,
-                    };
+                    let (note, tag) = Self::format_zombie_cpu_note(zombie, last_cpu, cur, now);
                     last_cpu = cur.map(|c| (now, c));
-                    match delta {
-                        // 判据：Δ > 窗口 25% → 忙环；否则阻塞/挂起（阈值保守，
-                        // 只为日志定性不当判死依据——判死仍走回合感知阈值）。
-                        Some((win_ms, d)) if win_ms > 0 => {
-                            let verdict = if d * 4 > win_ms { "忙环（事件循环被同步长任务独占）" } else { "阻塞/挂起（CPU 几乎无消耗）" };
-                            cpu_series.push_back(format!("×{zombie} Δ={d}ms/{win_ms}ms {verdict}"));
-                            cpu_series.truncate(6);
-                            format!("（取证：{win_ms}ms 窗口 CPU Δ={d}ms，{verdict}）")
+                    if let Some(t) = tag {
+                        while cpu_series.len() >= 6 {
+                            cpu_series.pop_front();
                         }
-                        Some((_, _)) => String::new(),
-                        None => {
-                            cpu_series.push_back(format!("×{zombie} 采样缺席"));
-                            cpu_series.truncate(6);
-                            "（取证不可用：非 Windows/WSL 模式/采样失败）".to_string()
-                        }
+                        cpu_series.push_back(t);
                     }
+                    note
                 };
                 log_line(&format!("内核假死可疑（端口通、HTTP 无响应）×{zombie}{cpu_note}"));
                 if Supervisor::should_restart_zombie(zombie, crate::session_notify::active_turns()) {
@@ -2586,6 +2631,39 @@ Content-Length: 0
         assert!(!Supervisor::http_alive(dport), "无监听端口必须判死");
         drop(zthread);
         drop(lthread);
+    }
+
+    #[test]
+    fn probe_http_timeout_applies_60s_startup_grace() {
+        assert_eq!(Supervisor::probe_http_timeout(Duration::from_secs(0)), Duration::from_secs(5));
+        assert_eq!(Supervisor::probe_http_timeout(Duration::from_secs(59)), Duration::from_secs(5));
+        assert_eq!(Supervisor::probe_http_timeout(Duration::from_secs(60)), Duration::from_secs(3));
+        assert_eq!(Supervisor::probe_http_timeout(Duration::from_secs(120)), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn format_zombie_cpu_note_distinguishes_baseline_delta_and_unavailable() {
+        let now = std::time::Instant::now();
+        // ① 首次成功采样：不再误报「取证不可用」
+        let (note1, tag1) = Supervisor::format_zombie_cpu_note(1, None, Some(1200), now);
+        assert!(note1.contains("首次基线采样"), "首轮成功采样应明确提示基线采样: {note1}");
+        assert!(!note1.contains("取证不可用"), "首轮成功采样不得误报取证不可用: {note1}");
+        assert_eq!(tag1.as_deref(), Some("×1 基线采样"));
+
+        // ② 第二轮：有基线且 Δ > 25% → 忙环
+        let prev_t = now.checked_sub(Duration::from_millis(3000)).unwrap();
+        let (note2, tag2) = Supervisor::format_zombie_cpu_note(2, Some((prev_t, 1200)), Some(3000), now);
+        assert!(note2.contains("忙环"), "高 CPU 增量应判忙环: {note2}");
+        assert!(tag2.unwrap_or_default().contains("Δ=1800ms/3000ms"));
+
+        // ③ 第二轮：有基线且 Δ 极小 → 阻塞/挂起
+        let (note3, _) = Supervisor::format_zombie_cpu_note(3, Some((prev_t, 1200)), Some(1250), now);
+        assert!(note3.contains("阻塞/挂起"), "极低 CPU 增量应判阻塞/挂起: {note3}");
+
+        // ④ 采样失败（cur == None）→ 取证不可用
+        let (note4, tag4) = Supervisor::format_zombie_cpu_note(1, None, None, now);
+        assert!(note4.contains("取证不可用"), "采样失败才报取证不可用: {note4}");
+        assert_eq!(tag4.as_deref(), Some("×1 采样缺席"));
     }
 
     /// 仓库根定位（与装配层 find_repo_root 同规则）。

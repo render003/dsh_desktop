@@ -905,3 +905,45 @@ test('一键更新全部：可更新项 >= 2 时显示按钮，串行更新并�
   assert.match(textAll(cardOf(tree, 'dsh-pocket')), /v2\.14\.0/, '成功项版本号应刷新');
   assert.match(textAll(cardOf(tree, 'dsh-context')), /镜像超时/, '失败项行内保留错误原文');
 });
+
+test('预设批量启停：「精简常用」仅停用非核心可切换项，「全部启用」可一键恢复', async () => {
+  const calls = [];
+  const bridge = {
+    list: async () => ([
+      row({ id: 'dsh-builtin-manager', name: 'dsh-builtin-manager', enabled: true }),
+      row({ id: 'better-sidebar', name: 'dsh-better-sidebar', enabled: true }),
+      row({ id: 'dsh-pocket', name: 'dsh-pocket', enabled: true }),
+      row({ id: 'synapse', name: 'dsh-synapse', enabled: true }),
+      row({ id: 'locked-opt', name: 'dsh-locked-opt', enabled: true, toggleable: false })
+    ]),
+    setEnabled: async (id, enabled) => {
+      calls.push([id, enabled]);
+      return { ok: true };
+    }
+  };
+  const { Component } = loadPanel({ dshDesktop: { pluginManager: bridge } });
+  const mounter = createMounter(Component, {});
+  let tree = await mounter.settle();
+
+  const leanBtns = buttonsWithText(tree, '精简常用');
+  assert.equal(leanBtns.length, 1, '应显示「精简常用」按钮');
+  await leanBtns[0].props.onClick();
+  tree = await mounter.settle();
+
+  assert.deepEqual(calls, [['dsh-pocket', false], ['synapse', false]],
+    '精简常用应只停用非核心且可切换的项，不碰核心项、自身与锁定项');
+  assert.match(textAll(tree), /已应用「精简常用」：变更 2 项/, '应展示精简预设汇总');
+  assert.equal(switches(cardOf(tree, 'dsh-pocket'))[0].props.checked, false);
+  assert.equal(switches(cardOf(tree, 'better-sidebar'))[0].props.checked, true);
+
+  calls.length = 0;
+  const allBtns = buttonsWithText(tree, '全部启用');
+  assert.equal(allBtns.length, 1, '应显示「全部启用」按钮');
+  await allBtns[0].props.onClick();
+  tree = await mounter.settle();
+
+  assert.deepEqual(calls, [['dsh-pocket', true], ['synapse', true]],
+    '全部启用应恢复此前停用的可切换项');
+  assert.match(textAll(tree), /已应用「全部启用」：变更 2 项/, '应展示全部启用汇总');
+  assert.equal(switches(cardOf(tree, 'dsh-pocket'))[0].props.checked, true);
+});
