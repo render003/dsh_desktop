@@ -3025,7 +3025,9 @@ function buildTeamsApi(ctx) {
 		const agent = agents?.get(rootSessionId);
 		if (agent === void 0) throw new SidebarError("team-error", "the tree root is not live in this process", 404);
 		try {
-			if (teams.tryMembership(agent) === void 0) throw new SidebarError("team-error", "the tree root leads no team", 404);
+			if (typeof teams.isEnabled === "function") {
+				if (!teams.isEnabled(agent)) throw new SidebarError("team-error", "the tree root leads no team", 404);
+			} else if (typeof teams.tryMembership === "function" && teams.tryMembership(agent) === void 0) throw new SidebarError("team-error", "the tree root leads no team", 404);
 		} catch (error) {
 			if (error instanceof SidebarError) throw error;
 			throw new SidebarError("team-error", error instanceof Error ? error.message : String(error), 404);

@@ -107,7 +107,11 @@ export function buildTeamsApi(ctx: Context): SidebarTeamsRoutes {
       throw new SidebarError('team-error', 'the tree root is not live in this process', 404)
     }
     try {
-      if (teams.tryMembership(agent) === undefined) {
+      if (typeof teams.isEnabled === 'function') {
+        if (!teams.isEnabled(agent)) {
+          throw new SidebarError('team-error', 'the tree root leads no team', 404)
+        }
+      } else if (typeof teams.tryMembership === 'function' && teams.tryMembership(agent) === undefined) {
         throw new SidebarError('team-error', 'the tree root leads no team', 404)
       }
     } catch (error) {

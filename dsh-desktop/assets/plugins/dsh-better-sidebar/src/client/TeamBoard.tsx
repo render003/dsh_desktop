@@ -107,6 +107,7 @@ function TeamTaskRow(props: {
     if (row !== null) onOpenTask(task, row)
   }
 
+  const owner = task.ownerName ?? task.ownerId
   return (
     // The row is a flex line so the trailing Menu can sit beside the press
     // target (`.teamTaskRow`).
@@ -121,8 +122,8 @@ function TeamTaskRow(props: {
       >
         <StateDot size={6} state={taskDotState(task)} />
         <span className={css.teamTaskSubject} title={task.subject}>{task.subject}</span>
-        {task.ownerName !== undefined && (
-          <span className={css.teamTaskOwner} title={task.ownerName}>{task.ownerName}</span>
+        {owner !== undefined && (
+          <span className={css.teamTaskOwner} title={owner}>{owner}</span>
         )}
         <Tag tone={taskTone(task)}>{taskStatusLabel(task)}</Tag>
       </Button>
@@ -169,12 +170,12 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
   const { members, tasks, onOpenTask, collapsed, onToggleCollapsed } = props
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined)
 
-  const live = useMemo(() => tasks.filter(task => task.status !== 'deleted'), [tasks])
+  const live = useMemo(() => (tasks ?? []).filter(task => task.status !== 'deleted'), [tasks])
   const shown = useMemo(
-    () => live.filter(task => ownerFilter === undefined || task.ownerName === ownerFilter),
+    () => live.filter(task => ownerFilter === undefined || task.ownerName === ownerFilter || task.ownerId === ownerFilter),
     [live, ownerFilter],
   )
-  const teammates = useMemo(() => members.filter(member => member.role === 'teammate'), [members])
+  const teammates = useMemo(() => (members ?? []).filter(member => member.role === 'teammate'), [members])
 
   return (
     <section className={css.teamBoard} aria-label={t('teamBoard')} data-team-board>

@@ -113,7 +113,7 @@ function TaskViewBody(props: {
     <>
       <div className={css.jobPopMeta}>
         <span className={css.popKey}>{t('teamTaskOwner')}</span>
-        <span className={css.jobPopValue}>{task.ownerName ?? t('teamTaskUnowned')}</span>
+        <span className={css.jobPopValue}>{task.ownerName ?? task.ownerId ?? t('teamTaskUnowned')}</span>
         {task.blockedBy.length > 0 && (
           <>
             <span className={css.popKey}>{t('teamTaskBlockedBy')}</span>

@@ -307,8 +307,8 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
   for (const member of teamMembers) nodeByOwner.set(member.name, member.id)
   const tasksByNode = new Map<string, TasksNodeTask[]>()
   for (const task of teamTasks) {
-    if (task.status === 'deleted' || task.ownerName === undefined) continue
-    const nodeId = nodeByOwner.get(task.ownerName)
+    if (task.status === 'deleted') continue
+    const nodeId = task.ownerId ?? (task.ownerName !== undefined ? nodeByOwner.get(task.ownerName) : undefined)
     if (nodeId === undefined) continue
     const list = tasksByNode.get(nodeId)
     const entry: TasksNodeTask = {
@@ -384,7 +384,9 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
         ...(team !== undefined ? { team } : {}),
         ...(tasksByNode.get(entry.id) !== undefined ? { tasks: tasksByNode.get(entry.id) } : {}),
         hasChildren: !isKnownLeaf(catalogs, entry.id),
-        childAddress: { parentSessionId: parentId, childSessionId: entry.id, mode: entry.mode },
+        ...(entry.mode !== 'external'
+          ? { childAddress: { parentSessionId: parentId, childSessionId: entry.id, mode: entry.mode } }
+          : {}),
       })
     }
 

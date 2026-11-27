@@ -356,8 +356,10 @@ export interface SidebarAgentPresetsService {
  * resolving the 0.1.6 `TeamTaskMutationResult` union.
  */
 export interface SidebarAgentTeamsService {
-    /** The agent's team membership, or undefined for a non-team/stale agent. */
-    tryMembership(agent: unknown): unknown;
+    /** Whether Agent Teams mode is enabled on the caller's tree (DSH 0.2.2+). */
+    isEnabled?(agent: unknown): boolean;
+    /** Legacy 0.1.7 membership check (removed in DSH 0.2.1-rc.2+). */
+    tryMembership?(agent: unknown): unknown;
     /** Create one shared task (CAS-free; ids are server-issued). */
     createTask(agent: unknown, req: SidebarCreateTeamTaskRequest): Promise<SidebarTeamTaskView>;
     /** Compare-and-set mutation of one shared task (stale revision → throws). */
@@ -403,8 +405,11 @@ export interface SidebarTeamMemberProjection {
  * rejected Team record when the board had to stop at its last valid state.
  */
 export interface SidebarTeamProjection {
-    members: readonly SidebarTeamMemberProjection[];
-    tasks: readonly SidebarTeamTaskView[];
+    /** Whether Agent Teams is enabled on this session (DSH 0.2.2+; absent in 0.1.7). */
+    enabled?: boolean;
+    /** Legacy 0.1.7 durable roster; removed in DSH 0.2.1-rc.2+ (members live in subagentCatalog). */
+    members?: readonly SidebarTeamMemberProjection[];
+    tasks?: readonly SidebarTeamTaskView[];
     failure?: string;
 }
 /** One shared task-board row (durable fields plus derived readiness). */
@@ -414,6 +419,8 @@ export interface SidebarTeamTaskView {
     subject: string;
     description: string;
     status: 'pending' | 'in_progress' | 'completed' | 'deleted';
+    /** Owning agent session id (DSH 0.2.1-rc.2+). */
+    ownerId?: string;
     ownerName?: string;
     blockedBy: string[];
     writeScopes: string[];
@@ -522,10 +529,12 @@ export interface SidebarSubagentCatalogEntry {
     id: string;
     /** Epoch ms the child was created. */
     createdAt: number;
-    /** `unknown` keeps a child visible without claiming continuation support. */
-    mode: 'one-shot' | 'continuable' | 'unknown';
+    /** `unknown` keeps a child visible without claiming continuation support; `external` has no local child session. */
+    mode: 'one-shot' | 'continuable' | 'external' | 'unknown';
     /** Mode-specific label; continuable children always carry one. */
     label?: string;
+    /** Unique sibling name recorded in DSH 0.2.2+ catalog v3 entries. */
+    name?: string;
 }
 /** The client sessions service face (only the list feed is needed). */
 export interface SidebarSessionsService {

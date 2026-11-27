@@ -13172,9 +13172,9 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 		function subagentCatalogs(projections) {
 			const views = {};
 			for (const [sessionId, snapshot] of Object.entries(projections ?? {})) {
-				const entries = snapshot.values.subagentCatalog;
+				const entries = snapshot?.values?.subagentCatalog;
 				views[sessionId] = {
-					entries: entries ?? [],
+					entries: Array.isArray(entries) ? entries : [],
 					state: snapshot.state === "idle" ? entries === void 0 ? "loading" : "ready" : snapshot.state,
 					error: snapshot.error ?? null
 				};
@@ -13227,7 +13227,9 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 		*/
 		function teamProjectionOf(projections, rootId) {
 			if (rootId === void 0) return void 0;
-			return projections?.[rootId]?.values.agentTeam;
+			const raw = projections?.[rootId]?.values?.agentTeam;
+			if (raw === void 0 || raw.enabled === false) return void 0;
+			return raw;
 		}
 		/**
 		* Overlay runtime activity onto the durable roster.
@@ -13244,7 +13246,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 		* @param byId - the session list by id (the Lead's own running flag lives here).
 		*/
 		function teamMembersOf(team, live, byId) {
-			if (team === void 0) return [];
+			if (team === void 0 || !Array.isArray(team.members)) return [];
 			return team.members.map((member) => ({
 				id: member.id,
 				name: member.name,
@@ -13605,8 +13607,8 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 			for (const member of teamMembers) nodeByOwner.set(member.name, member.id);
 			const tasksByNode = /* @__PURE__ */ new Map();
 			for (const task of teamTasks) {
-				if (task.status === "deleted" || task.ownerName === void 0) continue;
-				const nodeId = nodeByOwner.get(task.ownerName);
+				if (task.status === "deleted") continue;
+				const nodeId = task.ownerId ?? (task.ownerName !== void 0 ? nodeByOwner.get(task.ownerName) : void 0);
 				if (nodeId === void 0) continue;
 				const list = tasksByNode.get(nodeId);
 				const entry = {
@@ -13677,11 +13679,11 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 						...team !== void 0 ? { team } : {},
 						...tasksByNode.get(entry.id) !== void 0 ? { tasks: tasksByNode.get(entry.id) } : {},
 						hasChildren: !isKnownLeaf(catalogs, entry.id),
-						childAddress: {
+						...entry.mode !== "external" ? { childAddress: {
 							parentSessionId: parentId,
 							childSessionId: entry.id,
 							mode: entry.mode
-						}
+						} } : {}
 					});
 				}
 				const runNodes = [];
@@ -14263,6 +14265,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 			switch (mode) {
 				case "one-shot": return t("subagentModeOneShot");
 				case "continuable": return t("subagentModeContinuable");
+				case "external":
 				case "unknown":
 				case void 0: return;
 			}
@@ -16533,6 +16536,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 				const row = rowRef.current;
 				if (row !== null) onOpenTask(task, row);
 			};
+			const owner = task.ownerName ?? task.ownerId;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				ref: rowRef,
 				className: tasks_graph_module_css_default.teamTaskRow,
@@ -16555,10 +16559,10 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 							title: task.subject,
 							children: task.subject
 						}),
-						task.ownerName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						owner !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: tasks_graph_module_css_default.teamTaskOwner,
-							title: task.ownerName,
-							children: task.ownerName
+							title: owner,
+							children: owner
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tag, {
 							tone: taskTone(task),
@@ -16596,9 +16600,9 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 		function TeamBoard(props) {
 			const { members, tasks, onOpenTask, collapsed, onToggleCollapsed } = props;
 			const [ownerFilter, setOwnerFilter] = (0, react.useState)(void 0);
-			const live = (0, react.useMemo)(() => tasks.filter((task) => task.status !== "deleted"), [tasks]);
-			const shown = (0, react.useMemo)(() => live.filter((task) => ownerFilter === void 0 || task.ownerName === ownerFilter), [live, ownerFilter]);
-			const teammates = (0, react.useMemo)(() => members.filter((member) => member.role === "teammate"), [members]);
+			const live = (0, react.useMemo)(() => (tasks ?? []).filter((task) => task.status !== "deleted"), [tasks]);
+			const shown = (0, react.useMemo)(() => live.filter((task) => ownerFilter === void 0 || task.ownerName === ownerFilter || task.ownerId === ownerFilter), [live, ownerFilter]);
+			const teammates = (0, react.useMemo)(() => (members ?? []).filter((member) => member.role === "teammate"), [members]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: tasks_graph_module_css_default.teamBoard,
 				"aria-label": t("teamBoard"),
@@ -16767,7 +16771,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: tasks_graph_module_css_default.jobPopValue,
-							children: task.ownerName ?? t("teamTaskUnowned")
+							children: task.ownerName ?? task.ownerId ?? t("teamTaskUnowned")
 						}),
 						task.blockedBy.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: tasks_graph_module_css_default.popKey,
@@ -17382,7 +17386,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 				if (popover === null) return null;
 				if (popover.kind === "task") {
 					if (team === void 0 || rootId === void 0) return null;
-					const task = popover.taskId === void 0 ? void 0 : team.tasks.find((candidate) => candidate.id === popover.taskId);
+					const task = popover.taskId === void 0 ? void 0 : (team.tasks ?? []).find((candidate) => candidate.id === popover.taskId);
 					if (popover.taskId !== void 0 && task === void 0) return null;
 					return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskWindow, {
 						rootId,
@@ -17463,7 +17467,7 @@ Mode: this is a continuable side conversation. Your answers stay in this side th
 					rootId !== void 0 && team !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TeamBoard, {
 						rootId,
 						members: teamMembers,
-						tasks: team.tasks,
+						tasks: team.tasks ?? [],
 						onOpenTask: openTaskFromBoard,
 						collapsed: teamBoardCollapsed,
 						onToggleCollapsed: () => {

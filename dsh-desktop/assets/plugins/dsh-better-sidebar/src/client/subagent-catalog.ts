@@ -58,9 +58,9 @@ export function subagentCatalogs(
 ): Readonly<Record<string, SubagentCatalogView>> {
   const views: Record<string, SubagentCatalogView> = {}
   for (const [sessionId, snapshot] of Object.entries(projections ?? {})) {
-    const entries = snapshot.values.subagentCatalog
+    const entries = snapshot?.values?.subagentCatalog
     views[sessionId] = {
-      entries: entries ?? [],
+      entries: Array.isArray(entries) ? entries : [],
       state: snapshot.state === 'idle'
         ? entries === undefined ? 'loading' : 'ready'
         : snapshot.state,

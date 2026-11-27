@@ -141,6 +141,7 @@ export function modeLabel(mode: TasksAgentNode['mode']): string | undefined {
   switch (mode) {
     case 'one-shot': return t('subagentModeOneShot')
     case 'continuable': return t('subagentModeContinuable')
+    case 'external':
     case 'unknown':
     case undefined: return undefined
   }

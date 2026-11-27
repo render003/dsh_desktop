@@ -76,7 +76,9 @@ export function teamProjectionOf(
   rootId: string | undefined,
 ): SidebarTeamProjection | undefined {
   if (rootId === undefined) return undefined
-  return projections?.[rootId]?.values.agentTeam
+  const raw = projections?.[rootId]?.values?.agentTeam
+  if (raw === undefined || raw.enabled === false) return undefined
+  return raw
 }
 
 /**
@@ -98,7 +100,7 @@ export function teamMembersOf(
   live: Readonly<Record<string, SidebarChildLiveView | undefined>>,
   byId: Readonly<Record<string, SidebarSessionSummary | undefined>>,
 ): TeamMemberRow[] {
-  if (team === undefined) return []
+  if (team === undefined || !Array.isArray(team.members)) return []
   return team.members.map(member => ({
     id: member.id,
     name: member.name,
